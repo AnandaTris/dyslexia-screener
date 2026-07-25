@@ -324,6 +324,20 @@ h3 {
   margin-top: 8px;
 }
 
+/* Shown when the decision rule held a high-scoring sample at "unlikely".
+   Needs to read as a correction to the gauge above it, so it is set apart
+   rather than blending into the reasoning text. */
+.verdict-held {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--paper);
+  border-left: 3px solid var(--ink);
+  border-radius: 0 6px 6px 0;
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+
 .sheet .summary {
   margin-bottom: 22px;
   font-size: 1rem;
