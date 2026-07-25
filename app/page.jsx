@@ -1,8 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "../lib/supabase/client";
-import ErrorAnalysis from "./components/ErrorAnalysis";
 import { signout } from "./login/actions";
 
 /**
@@ -35,14 +35,12 @@ function describeFailure(err) {
 
 export default function Home() {
   const [userEmail, setUserEmail] = useState(null);
-  const [mode, setMode] = useState("image");
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
-  const [sampleText, setSampleText] = useState("");
   const [writerAge, setWriterAge] = useState("");
   const inputRef = useRef(null);
 
@@ -65,7 +63,12 @@ export default function Home() {
     setError(null);
     setResult(null);
     setFile(f);
-    setPreviewUrl(URL.createObjectURL(f));
+    // Each createObjectURL pins its blob in memory until revoked, so drop the
+    // previous preview before replacing it.
+    setPreviewUrl((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return URL.createObjectURL(f);
+    });
   }, []);
 
   const onDrop = useCallback(
@@ -109,48 +112,15 @@ export default function Home() {
     }
   };
 
-  const analyzeText = async () => {
-    if (sampleText.trim().length < 20) {
-      setError("Paste at least 20 characters of the student's writing.");
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    setResult(null);
-
-    try {
-      const res = await fetch("/api/analyze-text", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: sampleText, writerAge: parsedAge })
-      });
-
-      const data = await readJson(res);
-      if (!res.ok) {
-        throw new Error(data?.error || `Analysis failed (${res.status}).`);
-      }
-      if (!data) throw new Error("The server returned an unreadable response.");
-      setResult({ isWritingSample: true, textOnly: true, ...data });
-    } catch (err) {
-      setError(describeFailure(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const reset = () => {
     setFile(null);
-    setPreviewUrl(null);
+    setPreviewUrl((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return null;
+    });
     setResult(null);
     setError(null);
-    setSampleText("");
     if (inputRef.current) inputRef.current.value = "";
-  };
-
-  const switchMode = (next) => {
-    setMode(next);
-    setResult(null);
-    setError(null);
   };
 
   return (
@@ -162,16 +132,21 @@ export default function Home() {
             Flags written-output patterns associated with dyslexia
           </span>
         </div>
-        {userEmail && (
-          <div className="user-bar">
-            <span className="user-email">{userEmail}</span>
-            <form action={signout}>
-              <button type="submit" className="btn btn-ghost">
-                Sign out
-              </button>
-            </form>
-          </div>
-        )}
+        <div className="user-bar">
+          <Link className="nav-link" href="/analysis">
+            Error pattern analyser
+          </Link>
+          {userEmail && (
+            <>
+              <span className="user-email">{userEmail}</span>
+              <form action={signout}>
+                <button type="submit" className="btn btn-ghost">
+                  Sign out
+                </button>
+              </form>
+            </>
+          )}
+        </div>
       </header>
 
       <div className="disclaimer-band" role="note">
@@ -182,89 +157,49 @@ export default function Home() {
       </div>
 
       <div className="columns">
-        <section className="upload-card" aria-label="Add a writing sample">
-          <h2>1. Add a writing sample</h2>
+        <section className="upload-card" aria-label="Upload a writing sample">
+          <h2>1. Upload the handwriting</h2>
 
-          <div className="mode-tabs" role="tablist" aria-label="Input method">
-            <button
-              role="tab"
-              aria-selected={mode === "image"}
-              className={`mode-tab ${mode === "image" ? "active" : ""}`}
-              onClick={() => switchMode("image")}
-            >
-              Photo of writing
-            </button>
-            <button
-              role="tab"
-              aria-selected={mode === "text"}
-              className={`mode-tab ${mode === "text" ? "active" : ""}`}
-              onClick={() => switchMode("text")}
-            >
-              Typed text
-            </button>
+          <div
+            className={`dropzone ${dragging ? "dragging" : ""}`}
+            role="button"
+            tabIndex={0}
+            onClick={() => inputRef.current?.click()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={onDrop}
+          >
+            {file ? (
+              <span>{file.name}</span>
+            ) : (
+              <span>
+                Drag a photo here or click to browse.
+                <br />
+                Clear photos of a full paragraph work best.
+              </span>
+            )}
           </div>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) acceptFile(f);
+            }}
+          />
 
-          {mode === "image" ? (
-            <>
-              <div
-                className={`dropzone ${dragging ? "dragging" : ""}`}
-                role="button"
-                tabIndex={0}
-                onClick={() => inputRef.current?.click()}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDragging(true);
-                }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={onDrop}
-              >
-                {file ? (
-                  <span>{file.name}</span>
-                ) : (
-                  <span>
-                    Drag an image here or click to browse.
-                    <br />
-                    Clear photos of a full paragraph work best.
-                  </span>
-                )}
-              </div>
-              <input
-                ref={inputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif"
-                hidden
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) acceptFile(f);
-                }}
-              />
-
-              {previewUrl && (
-                <div className="preview">
-                  <img src={previewUrl} alt="Preview of uploaded writing sample" />
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              <label className="auth-label" htmlFor="sample-text">
-                Type or paste the student&apos;s writing
-              </label>
-              <textarea
-                id="sample-text"
-                className="sample-textarea"
-                value={sampleText}
-                onChange={(e) => setSampleText(e.target.value)}
-                placeholder="Copy the writing exactly as the student wrote it, including the spelling mistakes."
-                rows={10}
-              />
-              <p className="auth-hint">
-                {sampleText.trim() ? `${sampleText.trim().split(/\s+/).length} words` : "50 words or more gives a more stable pattern."}
-              </p>
-            </>
+          {previewUrl && (
+            <div className="preview">
+              <img src={previewUrl} alt="Preview of uploaded writing sample" />
+            </div>
           )}
 
           <label className="auth-label" htmlFor="writer-age">
@@ -287,8 +222,8 @@ export default function Home() {
           <div className="actions">
             <button
               className="btn btn-primary"
-              onClick={mode === "image" ? analyze : analyzeText}
-              disabled={loading || (mode === "image" ? !file : sampleText.trim().length < 20)}
+              onClick={analyze}
+              disabled={loading || !file}
             >
               {loading ? (
                 <>
@@ -296,10 +231,10 @@ export default function Home() {
                   Analysing…
                 </>
               ) : (
-                "Analyse sample"
+                "Screen this sample"
               )}
             </button>
-            {(file || sampleText) && (
+            {file && (
               <button className="btn btn-ghost" onClick={reset}>
                 Clear
               </button>
@@ -320,31 +255,22 @@ export default function Home() {
         >
           {!result && !loading && (
             <p className="empty-state">
-              Results will appear here after analysis. A photo is screened for
-              letter reversals, transpositions, phonetic spelling, omissions,
-              spacing and sizing, then the writing is broken down into
-              phonological, orthographic, morphological and visual error
-              patterns. Typed text goes straight to the error analysis.
+              Results will appear here. The sample is read for letter reversals,
+              transpositions, phonetic spelling, omissions, spacing and sizing,
+              then scored for whether a formal assessment is worth pursuing.
             </p>
           )}
 
           {loading && <p className="empty-state">Reading the sample…</p>}
 
-          {result && result.textOnly && (
-            <>
-              <h2>Error pattern report</h2>
-              <ErrorAnalysis analysis={result.analysis} />
-            </>
-          )}
-
-          {result && !result.textOnly && !result.isWritingSample && (
+          {result && !result.isWritingSample && (
             <>
               <h2>Not a writing sample</h2>
               <p className="summary">{result.summary}</p>
             </>
           )}
 
-          {result && !result.textOnly && result.isWritingSample && (
+          {result && result.isWritingSample && (
             <>
               <h2>Screening report</h2>
 
@@ -413,10 +339,17 @@ export default function Home() {
                 <>
                   <h3 className="section-label">Transcription</h3>
                   <p className="transcription">{result.transcription}</p>
+                  <p className="auth-hint">
+                    To break these spellings down into phonological,
+                    orthographic, morphological and visual error patterns, paste
+                    this into the{" "}
+                    <Link className="nav-link" href="/analysis">
+                      error pattern analyser
+                    </Link>
+                    .
+                  </p>
                 </>
               )}
-
-              {result.errorAnalysis && <ErrorAnalysis analysis={result.errorAnalysis} />}
 
               <div className="next-steps">
                 <strong>Next steps:</strong> if multiple indicators appear
