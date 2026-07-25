@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
+import { createClient } from "../../../lib/supabase/server";
 
 export const maxDuration = 60;
 
@@ -52,10 +53,26 @@ Rules:
 
 export async function POST(req) {
   try {
+    // Require an authenticated user before spending any Gemini quota.
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "You must be signed in to analyse a sample." },
+        { status: 401 },
+      );
+    }
+
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
-        { error: "Server is missing GEMINI_API_KEY. Add it to .env.local and restart." },
-        { status: 500 }
+        {
+          error:
+            "Server is missing GEMINI_API_KEY. Add it to .env.local and restart.",
+        },
+        { status: 500 },
       );
     }
 
@@ -65,19 +82,21 @@ export async function POST(req) {
     if (!imageBase64 || !mediaType) {
       return NextResponse.json(
         { error: "Request must include imageBase64 and mediaType." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (!ALLOWED_TYPES.includes(mediaType)) {
       return NextResponse.json(
-        { error: `Unsupported image type ${mediaType}. Use JPEG, PNG, WebP, or GIF.` },
-        { status: 400 }
+        {
+          error: `Unsupported image type ${mediaType}. Use JPEG, PNG, WebP, or GIF.`,
+        },
+        { status: 400 },
       );
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3-flash-preview",
       contents: [
         {
           role: "user",
@@ -85,27 +104,27 @@ export async function POST(req) {
             {
               inlineData: {
                 mimeType: mediaType,
-                data: imageBase64
-              }
+                data: imageBase64,
+              },
             },
             {
-              text: "Analyse this writing sample for dyslexia-associated indicators. Respond with the JSON object only."
-            }
-          ]
-        }
+              text: "Analyse this writing sample for dyslexia-associated indicators. Respond with the JSON object only.",
+            },
+          ],
+        },
       ],
       config: {
         systemInstruction: SYSTEM_PROMPT,
         responseMimeType: "application/json",
-        maxOutputTokens: 4000
-      }
+        maxOutputTokens: 4000,
+      },
     });
 
     const text = response.text;
     if (!text) {
       return NextResponse.json(
         { error: "Model returned no text content." },
-        { status: 502 }
+        { status: 502 },
       );
     }
 
@@ -117,8 +136,24 @@ export async function POST(req) {
     } catch {
       return NextResponse.json(
         { error: "Model response was not valid JSON.", raw: cleaned },
-        { status: 502 }
+        { status: 502 },
       );
+    }
+
+    // Persist the screening result for the signed-in user. A DB failure
+    // should not block returning the analysis, so we only log it.
+    const { error: dbError } = await supabase.from("screenings").insert({
+      user_id: user.id,
+      is_writing_sample: parsed.isWritingSample ?? null,
+      verdict: parsed.verdict ?? null,
+      likelihood_score: parsed.likelihoodScore ?? null,
+      transcription: parsed.transcription ?? null,
+      summary: parsed.summary ?? null,
+      result: parsed,
+    });
+
+    if (dbError) {
+      console.error("Failed to save screening:", dbError.message);
     }
 
     return NextResponse.json(parsed);
