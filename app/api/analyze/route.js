@@ -1,10 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
-import { analyzeWriting } from "../../../lib/nlp/analyze";
-import { persistErrorAnalysis } from "../../../lib/nlp/persist";
 import { createClient } from "../../../lib/supabase/server";
 
-// onnxruntime-node needs the Node runtime; the Edge runtime cannot load it.
+// This route is the screening path only: image in, verdict out. The error
+// pattern analyser lives on /api/analyze-text so that loading its grammar
+// model never sits between an upload and its screening result.
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
@@ -123,6 +123,13 @@ export async function POST(req) {
 
     const imageBase64 = Buffer.from(await image.arrayBuffer()).toString("base64");
 
+    // The system prompt discounts reversals for young writers, so a known age
+    // has to reach the model. Without it the model can only guess the age from
+    // the handwriting itself.
+    const agePreamble = writerAge
+      ? `The writer is ${writerAge} years old. Weigh developmental expectations for that age.\n`
+      : "";
+
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: [
@@ -136,7 +143,7 @@ export async function POST(req) {
               },
             },
             {
-              text: "Analyse this writing sample for dyslexia-associated indicators. Respond with the JSON object only.",
+              text: `${agePreamble}Analyse this writing sample for dyslexia-associated indicators. Respond with the JSON object only.`,
             },
           ],
         },
@@ -168,50 +175,23 @@ export async function POST(req) {
       );
     }
 
-    // Problem Statement 4: run the error-pattern analyser over the recovered
-    // text. The vision model reports what it sees in the image; this reports
-    // what the spelling errors are made of and which profile they fit.
-    let errorAnalysis = null;
-    if (parsed.isWritingSample && typeof parsed.transcription === "string") {
-      const analysis = await analyzeWriting(parsed.transcription, {
-        writerAge,
-        transcribed: true,
-      });
-      if (analysis.ok) errorAnalysis = analysis;
-    }
-
     // Persist the screening result for the signed-in user. A DB failure
     // should not block returning the analysis, so we only log it.
-    const { data: screening, error: dbError } = await supabase
-      .from("screenings")
-      .insert({
-        user_id: user.id,
-        is_writing_sample: parsed.isWritingSample ?? null,
-        verdict: parsed.verdict ?? null,
-        likelihood_score: parsed.likelihoodScore ?? null,
-        transcription: parsed.transcription ?? null,
-        summary: parsed.summary ?? null,
-        result: parsed,
-      })
-      .select("id")
-      .maybeSingle();
+    const { error: dbError } = await supabase.from("screenings").insert({
+      user_id: user.id,
+      is_writing_sample: parsed.isWritingSample ?? null,
+      verdict: parsed.verdict ?? null,
+      likelihood_score: parsed.likelihoodScore ?? null,
+      transcription: parsed.transcription ?? null,
+      summary: parsed.summary ?? null,
+      result: parsed,
+    });
 
     if (dbError) {
       console.error("Failed to save screening:", dbError.message);
     }
 
-    if (errorAnalysis) {
-      await persistErrorAnalysis(supabase, {
-        userId: user.id,
-        source: "image",
-        sampleText: parsed.transcription,
-        writerAge,
-        analysis: errorAnalysis,
-        screeningId: screening?.id ?? null,
-      });
-    }
-
-    return NextResponse.json({ ...parsed, errorAnalysis });
+    return NextResponse.json(parsed);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown server error";
     return NextResponse.json({ error: message }, { status: 500 });
