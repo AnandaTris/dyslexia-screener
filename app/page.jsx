@@ -298,6 +298,12 @@ export default function Home() {
                 <div className="gauge-label">
                   Evidence strength: {result.likelihoodScore}/100
                 </div>
+                {/* Only set when the rule overrode a score that would
+                    otherwise have read "likely". Without it the banner and
+                    the gauge look like they contradict each other. */}
+                {result.verdictHeldReason && (
+                  <p className="verdict-held">{result.verdictHeldReason}</p>
+                )}
                 <p className="verdict-reasoning">{result.verdictReasoning}</p>
               </div>
 
