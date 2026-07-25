@@ -1,4 +1,10 @@
+# Env files. `/.env` alone did not cover .env.local, which is the file the
+# README tells you to create — so real keys were one `git add .` away from
+# being committed. .env.example is the template and is meant to be tracked.
 /.env
+.env*.local
+!.env.example
+
 /node_modules
 /.next
 /.claude
