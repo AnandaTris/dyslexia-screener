@@ -43,8 +43,27 @@ h3 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
+  justify-content: space-between;
   gap: 8px 16px;
   margin-bottom: 8px;
+}
+
+.masthead-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+}
+
+.user-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.85rem;
+}
+
+.user-email {
+  color: var(--ink-soft);
 }
 
 .masthead h1 {
@@ -423,4 +442,47 @@ h3 {
   .spinner {
     animation-duration: 2s;
   }
+}
+
+/* Auth / login page */
+.auth-card {
+  max-width: 460px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.auth-label {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  margin-top: 8px;
+}
+
+.auth-input {
+  font-family: var(--font-body), sans-serif;
+  font-size: 1rem;
+  padding: 10px 12px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.auth-input:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.info-box {
+  background: var(--paper-deep);
+  border: 1px solid var(--rule-blue);
+  color: var(--ink);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.88rem;
+  margin-top: 12px;
 }

@@ -1,8 +1,11 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createClient } from "../lib/supabase/client";
+import { signout } from "./login/actions";
 
 export default function Home() {
+  const [userEmail, setUserEmail] = useState(null);
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [dragging, setDragging] = useState(false);
@@ -10,6 +13,13 @@ export default function Home() {
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const inputRef = useRef(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth
+      .getUser()
+      .then(({ data }) => setUserEmail(data.user?.email ?? null));
+  }, []);
 
   const acceptFile = useCallback((f) => {
     if (!f.type.startsWith("image/")) {
@@ -82,10 +92,22 @@ export default function Home() {
   return (
     <main className="shell">
       <header className="masthead">
-        <h1>Writing Sample Screener</h1>
-        <span className="tagline">
-          Flags written-output patterns associated with dyslexia
-        </span>
+        <div className="masthead-main">
+          <h1>Writing Sample Screener</h1>
+          <span className="tagline">
+            Flags written-output patterns associated with dyslexia
+          </span>
+        </div>
+        {userEmail && (
+          <div className="user-bar">
+            <span className="user-email">{userEmail}</span>
+            <form action={signout}>
+              <button type="submit" className="btn btn-ghost">
+                Sign out
+              </button>
+            </form>
+          </div>
+        )}
       </header>
 
       <div className="disclaimer-band" role="note">

@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
+import { createClient } from "../../../lib/supabase/server";
 
 export const maxDuration = 60;
 
@@ -52,6 +53,19 @@ Rules:
 
 export async function POST(req) {
   try {
+    // Require an authenticated user before spending any Gemini quota.
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "You must be signed in to analyse a sample." },
+        { status: 401 },
+      );
+    }
+
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
         {
@@ -124,6 +138,22 @@ export async function POST(req) {
         { error: "Model response was not valid JSON.", raw: cleaned },
         { status: 502 },
       );
+    }
+
+    // Persist the screening result for the signed-in user. A DB failure
+    // should not block returning the analysis, so we only log it.
+    const { error: dbError } = await supabase.from("screenings").insert({
+      user_id: user.id,
+      is_writing_sample: parsed.isWritingSample ?? null,
+      verdict: parsed.verdict ?? null,
+      likelihood_score: parsed.likelihoodScore ?? null,
+      transcription: parsed.transcription ?? null,
+      summary: parsed.summary ?? null,
+      result: parsed,
+    });
+
+    if (dbError) {
+      console.error("Failed to save screening:", dbError.message);
     }
 
     return NextResponse.json(parsed);

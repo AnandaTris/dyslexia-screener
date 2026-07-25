@@ -9,10 +9,11 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@google/genai": "^1.9.0",
+    "@supabase/ssr": "^0.12.3",
+    "@supabase/supabase-js": "^2.110.8",
     "next": "^14.2.15",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "@google/genai": "^1.9.0"
-  },
-  "devDependencies": {}
+    "react-dom": "^18.3.1"
+  }
 }
