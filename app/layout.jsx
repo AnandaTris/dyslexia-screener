@@ -15,7 +15,7 @@ const publicSans = Public_Sans({
 export const metadata = {
   title: "Writing Sample Screener",
   description:
-    "Screens images of handwriting for indicators associated with dyslexia. A screening aid, not a diagnostic tool."
+    "Screens photos and PDFs of handwriting for indicators associated with dyslexia. A screening aid, not a diagnostic tool."
 };
 
 export default function RootLayout({ children }) {

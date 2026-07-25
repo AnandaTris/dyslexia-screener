@@ -76,24 +76,34 @@ npm run build        # production build
 npm start            # serve the production build
 ```
 
-Create an account at `/signup`, then upload a photo **or** paste typed text.
+Create an account at `/signup`, then screen a sample at `/` or analyse typed text at `/analysis`.
 
 ---
 
 ## Using it
 
-The app has two input modes, both on the home page.
+The app has two pages, one per problem statement.
 
-**Photo of writing** — drag in a photo of handwriting. Gemini transcribes it and
-screens it for visible indicators (reversals, spacing, letter sizing), then the NLP
-pipeline analyses the transcribed text for error patterns. You get both reports.
+**`/` — the screener (PS1).** Drag in a photo or a PDF of handwriting. Gemini
+transcribes it and screens it for visible indicators (reversals, spacing, letter
+sizing). A PDF may run to several pages; all of them are read. Uploads are capped at
+8 MB, because the file is base64-encoded into the API request and the whole request
+has to stay under the inline-data limit.
 
-**Typed text** — paste the student's writing exactly as they wrote it, mistakes and all.
-Goes straight to the error analysis. Useful for testing, and for work that is already
-digital.
+The verdict is not the model's own label. Gemini supplies the evidence — an
+evidence-strength score and a list of indicators — and `lib/screening/verdict.js`
+decides from it: `likely` needs a score of 55 or more, unless every indicator found is
+a letter reversal and the writer is under seven, in which case the verdict is held at
+`unlikely` and the reason is shown. Both thresholds are exported constants. This is a
+transparent rule over LLM-extracted features, not a trained classifier.
+
+**`/analysis` — the error pattern analyser (PS4).** Paste the student's writing exactly
+as they wrote it, mistakes and all. Runs the local NLP pipeline and reports the error
+profile. The first run loads the grammar-correction model, so give it a moment.
 
 The optional **writer's age** field is used only to judge whether letter reversals are
-developmentally expected (common under about seven).
+developmentally expected (common under about seven). It is passed to the screening
+model and to the verdict rule.
 
 ### What the error analysis gives you
 
@@ -177,7 +187,8 @@ in the report.
 
 ```
 app/
-  page.jsx                     home: image + text input, results
+  page.jsx                     PS1 screener: photo/PDF upload, verdict
+  analysis/page.jsx            PS4 analyser: text input, error report
   layout.jsx                   fonts, metadata
   globals.css                  design system (exercise-book motif)
   login/page.jsx               sign in
@@ -187,10 +198,13 @@ app/
     PasswordField.jsx          password input with show/hide toggle
     ErrorAnalysis.jsx          renders the PS4 report
   api/
-    analyze/route.js           PS1: image → Gemini → screening + error analysis
+    analyze/route.js           PS1: photo/PDF → Gemini → screening
     analyze-text/route.js      PS4: text → error analysis
 
 lib/
+  screening/
+    verdict.js                 PS1 decision rule (score threshold + age guard)
+
   nlp/
     analyze.js                 pipeline orchestrator
     tokenize.js                sentence + word tokenisation with offsets

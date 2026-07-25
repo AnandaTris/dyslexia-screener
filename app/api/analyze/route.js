@@ -11,10 +11,21 @@ export const maxDuration = 120;
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const ALLOWED_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "application/pdf",
+];
 
-const SYSTEM_PROMPT = `You are a literacy screening assistant used by educators. You analyse images of handwritten or typed writing samples for surface-level indicators that are RESEARCH-ASSOCIATED with dyslexia. You are NOT a diagnostic tool and you must never claim someone has or does not have dyslexia.
+// Inline data is base64-encoded into the request body, which inflates it by
+// about a third, and the whole request has to stay under the API's inline
+// limit. 8 MB of source leaves comfortable headroom. Anything substantially
+// larger needs the Files API rather than a bigger number here.
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+
+const SYSTEM_PROMPT = `You are a literacy screening assistant used by educators. You analyse writing samples — photographs or PDF documents of handwritten or typed work — for surface-level indicators that are RESEARCH-ASSOCIATED with dyslexia. You are NOT a diagnostic tool and you must never claim someone has or does not have dyslexia.
 
 Indicators to look for in the writing sample:
 1. Letter reversals or inversions (b/d, p/q, m/w, n/u)
@@ -39,23 +50,25 @@ Respond ONLY with a JSON object, no markdown fences, no preamble, in exactly thi
     {
       "name": "short indicator name",
       "category": "reversal | transposition | phonetic_spelling | omission | case | spacing | sizing | inconsistency | homophone | formation",
-      "evidence": "the specific word(s) or feature(s) in the image that show this, quoted where possible",
+      "evidence": "the specific word(s) or feature(s) in the sample that show this, quoted where possible",
       "strength": "weak | moderate | strong"
     }
   ],
   "summary": "2-3 sentence plain-language summary written for a parent or teacher",
   "importantCaveats": [
-    "list of caveats relevant to THIS sample, e.g. sample too short, writer may be very young so reversals are developmentally normal, image quality limits analysis"
+    "list of caveats relevant to THIS sample, e.g. sample too short, writer may be very young so reversals are developmentally normal, scan or photo quality limits analysis"
   ]
 }
 
 Rules:
-- If the image is not a writing sample, set isWritingSample to false, leave indicators empty, set verdict to "unlikely" and likelihoodScore to 0, and explain in summary.
+- If the sample is not a piece of writing, set isWritingSample to false, leave indicators empty, set verdict to "unlikely" and likelihoodScore to 0, and explain in summary.
+- A PDF may run to several pages. Read every page, transcribe them in order, and report indicators from across the whole document rather than the first page alone.
+- If a PDF contains work from more than one writer, say so in the caveats: the report assumes a single writer and cannot separate them.
 - verdict is your overall lean: "likely" means the sample shows enough dyslexia-associated patterns that a formal assessment is worth pursuing, "unlikely" means it does not.
 - likelihoodScore expresses how strongly the evidence supports the verdict. Anchor it to evidence density: 0-30 means little or no indicator evidence, 30-55 means weak or ambiguous evidence, 55-75 means clear evidence across 2-3 categories, 75-100 means strong convergent evidence across 4+ categories. A verdict of "likely" should normally have a score of 55 or above.
 - The score is an evidence-strength estimate from one sample, NOT a clinical probability that the writer has dyslexia. Never present it otherwise.
 - Young children (roughly under 7) commonly reverse letters as part of normal development. If the writing appears to be from a young child, lower the score, weight this heavily in caveats, and only output "likely" if there is evidence beyond reversals alone.
-- Be conservative. Only report an indicator when you can point to concrete evidence in the image.`;
+- Be conservative. Only report an indicator when you can point to concrete evidence in the sample.`;
 
 export async function POST(req) {
   try {
@@ -88,32 +101,32 @@ export async function POST(req) {
     const form = await req.formData().catch(() => null);
     if (!form) {
       return NextResponse.json(
-        { error: "Request must be multipart/form-data with an image field." },
+        { error: "Request must be multipart/form-data with a file field." },
         { status: 400 },
       );
     }
 
-    const image = form.get("image");
-    if (!image || typeof image === "string") {
+    const upload = form.get("file");
+    if (!upload || typeof upload === "string") {
       return NextResponse.json(
-        { error: "Request must include an image file." },
+        { error: "Request must include a photo or PDF of the writing." },
         { status: 400 },
       );
     }
 
-    const mediaType = image.type;
+    const mediaType = upload.type;
     if (!ALLOWED_TYPES.includes(mediaType)) {
       return NextResponse.json(
         {
-          error: `Unsupported image type ${mediaType || "unknown"}. Use JPEG, PNG, WebP, or GIF.`,
+          error: `Unsupported file type ${mediaType || "unknown"}. Use a JPEG, PNG, WebP, GIF, or PDF.`,
         },
         { status: 400 },
       );
     }
 
-    if (image.size > MAX_IMAGE_BYTES) {
+    if (upload.size > MAX_UPLOAD_BYTES) {
       return NextResponse.json(
-        { error: "Image is larger than 8 MB. Please use a smaller image." },
+        { error: "File is larger than 8 MB. Please use a smaller photo or PDF." },
         { status: 413 },
       );
     }
@@ -122,7 +135,7 @@ export async function POST(req) {
     const writerAge =
       Number.isFinite(rawAge) && rawAge > 0 && rawAge < 120 ? Math.round(rawAge) : null;
 
-    const imageBase64 = Buffer.from(await image.arrayBuffer()).toString("base64");
+    const fileBase64 = Buffer.from(await upload.arrayBuffer()).toString("base64");
 
     // The system prompt discounts reversals for young writers, so a known age
     // has to reach the model. Without it the model can only guess the age from
@@ -140,7 +153,7 @@ export async function POST(req) {
             {
               inlineData: {
                 mimeType: mediaType,
-                data: imageBase64,
+                data: fileBase64,
               },
             },
             {
