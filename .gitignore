@@ -1,14 +1,42 @@
+# --- Secrets / env ---
 /.env
 .env*.local
 !.env.example
 
+# --- Dependencies ---
 /node_modules
+
+# --- Next.js build output ---
 /.next
+/out
+next-env.d.ts
+
+# --- Test / coverage ---
+/coverage
+
+# --- Python (rag-service) ---
+.venv/
+__pycache__
+*.py[cod]
+.pytest_cache/
+
+# --- Logs ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- Deploy ---
+.vercel
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+
+# --- Tooling / agent scratch (working-tree only) ---
 /.claude
 /.superpowers
-/.DS_Store
-/.venv
+/.gstack
 /docs/superpowers
-/docs/superpowers/plans
-.DS_Store
-.gstack/

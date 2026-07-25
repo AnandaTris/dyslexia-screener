@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
 import { decideVerdict } from "../../../lib/screening/verdict";
 import { createClient } from "../../../lib/supabase/server";
+import { deriveProfile } from "../../../lib/profile";
 
 // This route is the screening path only: image in, verdict out. The error
 // pattern analyser lives on /api/analyze-text so that loading its grammar
@@ -225,6 +226,27 @@ export async function POST(req) {
 
     if (dbError) {
       console.error("Failed to save screening:", dbError.message);
+    }
+
+    // Derive and persist a learning profile from this screening's indicators so
+    // the dashboard/assistant can personalize. Non-fatal if it fails.
+    if (parsed.isWritingSample) {
+      const profile = deriveProfile(parsed.indicators);
+      if (profile) {
+        const { error: profileError } = await supabase
+          .from("learner_profiles")
+          .upsert(
+            {
+              user_id: user.id,
+              profile,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id" }
+          );
+        if (profileError) {
+          console.error("Failed to save learner profile:", profileError.message);
+        }
+      }
     }
 
     return NextResponse.json(screening);
