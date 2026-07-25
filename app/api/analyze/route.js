@@ -1,8 +1,12 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
+import { analyzeWriting } from "../../../lib/nlp/analyze";
+import { persistErrorAnalysis } from "../../../lib/nlp/persist";
 import { createClient } from "../../../lib/supabase/server";
 
-export const maxDuration = 60;
+// onnxruntime-node needs the Node runtime; the Edge runtime cannot load it.
+export const runtime = "nodejs";
+export const maxDuration = 120;
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -78,6 +82,10 @@ export async function POST(req) {
 
     const body = await req.json();
     const { imageBase64, mediaType } = body;
+    const writerAge =
+      Number.isFinite(body.writerAge) && body.writerAge > 0 && body.writerAge < 120
+        ? Math.round(body.writerAge)
+        : null;
 
     if (!imageBase64 || !mediaType) {
       return NextResponse.json(
@@ -140,23 +148,50 @@ export async function POST(req) {
       );
     }
 
+    // Problem Statement 4: run the error-pattern analyser over the recovered
+    // text. The vision model reports what it sees in the image; this reports
+    // what the spelling errors are made of and which profile they fit.
+    let errorAnalysis = null;
+    if (parsed.isWritingSample && typeof parsed.transcription === "string") {
+      const analysis = await analyzeWriting(parsed.transcription, {
+        writerAge,
+        transcribed: true,
+      });
+      if (analysis.ok) errorAnalysis = analysis;
+    }
+
     // Persist the screening result for the signed-in user. A DB failure
     // should not block returning the analysis, so we only log it.
-    const { error: dbError } = await supabase.from("screenings").insert({
-      user_id: user.id,
-      is_writing_sample: parsed.isWritingSample ?? null,
-      verdict: parsed.verdict ?? null,
-      likelihood_score: parsed.likelihoodScore ?? null,
-      transcription: parsed.transcription ?? null,
-      summary: parsed.summary ?? null,
-      result: parsed,
-    });
+    const { data: screening, error: dbError } = await supabase
+      .from("screenings")
+      .insert({
+        user_id: user.id,
+        is_writing_sample: parsed.isWritingSample ?? null,
+        verdict: parsed.verdict ?? null,
+        likelihood_score: parsed.likelihoodScore ?? null,
+        transcription: parsed.transcription ?? null,
+        summary: parsed.summary ?? null,
+        result: parsed,
+      })
+      .select("id")
+      .maybeSingle();
 
     if (dbError) {
       console.error("Failed to save screening:", dbError.message);
     }
 
-    return NextResponse.json(parsed);
+    if (errorAnalysis) {
+      await persistErrorAnalysis(supabase, {
+        userId: user.id,
+        source: "image",
+        sampleText: parsed.transcription,
+        writerAge,
+        analysis: errorAnalysis,
+        screeningId: screening?.id ?? null,
+      });
+    }
+
+    return NextResponse.json({ ...parsed, errorAnalysis });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown server error";
     return NextResponse.json({ error: message }, { status: 500 });
