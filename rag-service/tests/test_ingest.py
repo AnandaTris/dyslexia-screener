@@ -40,6 +40,7 @@ def test_ingest_stores_document_and_chunks():
     assert embeddings == [[7.0], [7.0]]
     # each chunk's metadata records the parent doc_type for retrieval tagging
     assert metadatas[0]["doc_type"] == "guide"
+    assert metadatas[0]["target_profiles"] == ["phonological"]
 
 
 def test_ingest_rejects_empty_text():
