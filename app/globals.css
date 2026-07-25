@@ -66,6 +66,24 @@ h3 {
   color: var(--ink-soft);
 }
 
+/* Moves between the screener and the error pattern analyser. */
+.nav-link {
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 2px solid var(--card-border);
+  padding-bottom: 1px;
+}
+
+.nav-link:hover {
+  border-bottom-color: var(--ink);
+}
+
+.nav-link:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
 .masthead h1 {
   font-size: clamp(1.7rem, 4vw, 2.4rem);
   font-weight: 700;
@@ -442,41 +460,6 @@ h3 {
   .spinner {
     animation-duration: 2s;
   }
-}
-
-/* Input mode tabs */
-.mode-tabs {
-  display: flex;
-  gap: 4px;
-  background: var(--paper-deep);
-  border: 1px solid var(--card-border);
-  border-radius: 9px;
-  padding: 4px;
-  margin-bottom: 14px;
-}
-
-.mode-tab {
-  flex: 1;
-  font-family: var(--font-body), sans-serif;
-  font-size: 0.87rem;
-  font-weight: 600;
-  color: var(--ink-soft);
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
-  padding: 8px 10px;
-  cursor: pointer;
-}
-
-.mode-tab.active {
-  background: var(--paper);
-  color: var(--ink);
-  box-shadow: 0 1px 3px rgba(27, 42, 74, 0.12);
-}
-
-.mode-tab:focus-visible {
-  outline: 3px solid var(--ink);
-  outline-offset: 1px;
 }
 
 .sample-textarea {
