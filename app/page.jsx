@@ -5,6 +5,34 @@ import { createClient } from "../lib/supabase/client";
 import ErrorAnalysis from "./components/ErrorAnalysis";
 import { signout } from "./login/actions";
 
+/**
+ * Reads a response body as JSON without throwing on a non-JSON body. An
+ * unauthenticated request or a dev-server error page answers with HTML, and
+ * res.json() on that throws a parser message that tells the user nothing.
+ */
+async function readJson(res) {
+  const body = await res.text();
+  try {
+    return JSON.parse(body);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * fetch() rejects with a bare TypeError whenever no HTTP response arrives at
+ * all: "Load failed" in Safari, "Failed to fetch" in Chrome. Neither tells the
+ * user anything. The usual cause here is middleware answering 401 while the
+ * image is still uploading, which drops the connection and takes the real
+ * message ("Your session expired") down with it.
+ */
+function describeFailure(err) {
+  if (err instanceof TypeError) {
+    return "Couldn't reach the server. Your session may have expired, so try signing in again.";
+  }
+  return err instanceof Error ? err.message : "Something went wrong.";
+}
+
 export default function Home() {
   const [userEmail, setUserEmail] = useState(null);
   const [mode, setMode] = useState("image");
@@ -59,30 +87,23 @@ export default function Home() {
     setResult(null);
 
     try {
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result.split(",")[1]);
-        reader.onerror = () => reject(new Error("Could not read the image."));
-        reader.readAsDataURL(file);
-      });
+      // Multipart with the raw File, not base64 inside JSON. Base64 inflates
+      // the body by a third and forces the whole encoded copy into memory
+      // before a single byte goes out; the browser streams this instead.
+      const form = new FormData();
+      form.append("image", file);
+      if (parsedAge !== null) form.append("writerAge", String(parsedAge));
 
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageBase64: base64,
-          mediaType: file.type,
-          writerAge: parsedAge
-        })
-      });
+      const res = await fetch("/api/analyze", { method: "POST", body: form });
 
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) {
-        throw new Error(data.error || "Analysis failed.");
+        throw new Error(data?.error || `Analysis failed (${res.status}).`);
       }
+      if (!data) throw new Error("The server returned an unreadable response.");
       setResult(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(describeFailure(err));
     } finally {
       setLoading(false);
     }
@@ -104,13 +125,14 @@ export default function Home() {
         body: JSON.stringify({ text: sampleText, writerAge: parsedAge })
       });
 
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) {
-        throw new Error(data.error || "Analysis failed.");
+        throw new Error(data?.error || `Analysis failed (${res.status}).`);
       }
+      if (!data) throw new Error("The server returned an unreadable response.");
       setResult({ isWritingSample: true, textOnly: true, ...data });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(describeFailure(err));
     } finally {
       setLoading(false);
     }

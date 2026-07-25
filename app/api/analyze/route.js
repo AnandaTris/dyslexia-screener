@@ -11,6 +11,7 @@ export const maxDuration = 120;
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 const SYSTEM_PROMPT = `You are a literacy screening assistant used by educators. You analyse images of handwritten or typed writing samples for surface-level indicators that are RESEARCH-ASSOCIATED with dyslexia. You are NOT a diagnostic tool and you must never claim someone has or does not have dyslexia.
 
@@ -80,28 +81,47 @@ export async function POST(req) {
       );
     }
 
-    const body = await req.json();
-    const { imageBase64, mediaType } = body;
-    const writerAge =
-      Number.isFinite(body.writerAge) && body.writerAge > 0 && body.writerAge < 120
-        ? Math.round(body.writerAge)
-        : null;
-
-    if (!imageBase64 || !mediaType) {
+    // The client posts multipart/form-data carrying the raw file. Base64 in a
+    // JSON body cost a third more bytes on the wire for no benefit: Gemini
+    // needs the encoding, but it can be done here, off the network path.
+    const form = await req.formData().catch(() => null);
+    if (!form) {
       return NextResponse.json(
-        { error: "Request must include imageBase64 and mediaType." },
+        { error: "Request must be multipart/form-data with an image field." },
         { status: 400 },
       );
     }
 
+    const image = form.get("image");
+    if (!image || typeof image === "string") {
+      return NextResponse.json(
+        { error: "Request must include an image file." },
+        { status: 400 },
+      );
+    }
+
+    const mediaType = image.type;
     if (!ALLOWED_TYPES.includes(mediaType)) {
       return NextResponse.json(
         {
-          error: `Unsupported image type ${mediaType}. Use JPEG, PNG, WebP, or GIF.`,
+          error: `Unsupported image type ${mediaType || "unknown"}. Use JPEG, PNG, WebP, or GIF.`,
         },
         { status: 400 },
       );
     }
+
+    if (image.size > MAX_IMAGE_BYTES) {
+      return NextResponse.json(
+        { error: "Image is larger than 8 MB. Please use a smaller image." },
+        { status: 413 },
+      );
+    }
+
+    const rawAge = Number(form.get("writerAge"));
+    const writerAge =
+      Number.isFinite(rawAge) && rawAge > 0 && rawAge < 120 ? Math.round(rawAge) : null;
+
+    const imageBase64 = Buffer.from(await image.arrayBuffer()).toString("base64");
 
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
