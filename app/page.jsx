@@ -52,12 +52,12 @@ export default function Home() {
   }, []);
 
   const acceptFile = useCallback((f) => {
-    if (!f.type.startsWith("image/")) {
-      setError("Please upload an image file (JPEG, PNG, WebP, or GIF).");
+    if (!f.type.startsWith("image/") && f.type !== "application/pdf") {
+      setError("Please upload a photo (JPEG, PNG, WebP, GIF) or a PDF.");
       return;
     }
     if (f.size > 8 * 1024 * 1024) {
-      setError("Image is larger than 8 MB. Please use a smaller image.");
+      setError("File is larger than 8 MB. Please use a smaller photo or PDF.");
       return;
     }
     setError(null);
@@ -82,6 +82,7 @@ export default function Home() {
   );
 
   const parsedAge = writerAge === "" ? null : Number(writerAge);
+  const isPdf = file?.type === "application/pdf";
 
   const analyze = async () => {
     if (!file) return;
@@ -94,7 +95,7 @@ export default function Home() {
       // the body by a third and forces the whole encoded copy into memory
       // before a single byte goes out; the browser streams this instead.
       const form = new FormData();
-      form.append("image", file);
+      form.append("file", file);
       if (parsedAge !== null) form.append("writerAge", String(parsedAge));
 
       const res = await fetch("/api/analyze", { method: "POST", body: form });
@@ -179,16 +180,16 @@ export default function Home() {
               <span>{file.name}</span>
             ) : (
               <span>
-                Drag a photo here or click to browse.
+                Drag a photo or PDF here, or click to browse.
                 <br />
-                Clear photos of a full paragraph work best.
+                Clear scans of a full paragraph work best.
               </span>
             )}
           </div>
           <input
             ref={inputRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
+            accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
             hidden
             onChange={(e) => {
               const f = e.target.files?.[0];
@@ -196,9 +197,25 @@ export default function Home() {
             }}
           />
 
+          {/* <img> cannot render a PDF, so PDFs get the browser's own viewer
+              via <object>. The fallback inside it shows when a browser has no
+              built-in viewer. */}
           {previewUrl && (
             <div className="preview">
-              <img src={previewUrl} alt="Preview of uploaded writing sample" />
+              {isPdf ? (
+                <object
+                  data={previewUrl}
+                  type="application/pdf"
+                  aria-label={`Preview of ${file?.name ?? "the uploaded PDF"}`}
+                >
+                  <p className="preview-fallback">
+                    {file?.name} — your browser can&apos;t preview PDFs, but the
+                    file will still be analysed.
+                  </p>
+                </object>
+              ) : (
+                <img src={previewUrl} alt="Preview of uploaded writing sample" />
+              )}
             </div>
           )}
 
