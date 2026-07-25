@@ -5,5 +5,10 @@
 /node_modules
 /.next
 /.claude
+/.superpowers
+/.DS_Store
+/.venv
+/docs/superpowers
+/docs/superpowers/plans
 .DS_Store
 .gstack/

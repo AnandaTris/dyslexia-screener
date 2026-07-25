@@ -1,0 +1,12 @@
+# Floors, not exact pins: this runs on Python 3.14, so let pip resolve the
+# newest 3.14-compatible release of each. Floors guarantee the APIs this code
+# uses (ollama .embed/format=json, supabase v2 .rpc, pydantic v2).
+fastapi>=0.115
+uvicorn[standard]>=0.34
+pydantic>=2.10
+pydantic-settings>=2.7
+ollama>=0.4
+supabase>=2.11
+pypdf>=5.1
+httpx>=0.28
+pytest>=8.3
