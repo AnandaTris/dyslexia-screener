@@ -4,7 +4,7 @@
 
 create extension if not exists vector;
 
--- ---------- RAG store (owned by the Python service, no RLS) ----------
+-- ---------- RAG store (locked to service role via RLS deny-all) ----------
 create table if not exists public.documents (
   id              uuid primary key default gen_random_uuid(),
   title           text not null,
@@ -25,6 +25,12 @@ create table if not exists public.document_chunks (
 
 create index if not exists document_chunks_embedding_idx
   on public.document_chunks using hnsw (embedding vector_cosine_ops);
+
+-- Lock down the RAG store: RLS on with NO anon/authenticated policies. The
+-- Python service uses the service role (bypasses RLS) so it still reads/writes;
+-- the public anon key gets no access (no policies = deny all).
+alter table public.documents       enable row level security;
+alter table public.document_chunks enable row level security;
 
 -- ---------- User-scoped tables (RLS on) ----------
 create table if not exists public.learner_profiles (
@@ -74,15 +80,19 @@ alter table public.journeys        enable row level security;
 alter table public.journey_steps   enable row level security;
 alter table public.chat_messages   enable row level security;
 
+drop policy if exists "own learner_profile" on public.learner_profiles;
 create policy "own learner_profile" on public.learner_profiles
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop policy if exists "own journeys" on public.journeys;
 create policy "own journeys" on public.journeys
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop policy if exists "own chat_messages" on public.chat_messages;
 create policy "own chat_messages" on public.chat_messages
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop policy if exists "own journey_steps" on public.journey_steps;
 create policy "own journey_steps" on public.journey_steps
   for all using (
     exists (select 1 from public.journeys j
