@@ -54,8 +54,11 @@ export async function POST(req) {
   try {
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
-        { error: "Server is missing GEMINI_API_KEY. Add it to .env.local and restart." },
-        { status: 500 }
+        {
+          error:
+            "Server is missing GEMINI_API_KEY. Add it to .env.local and restart.",
+        },
+        { status: 500 },
       );
     }
 
@@ -65,19 +68,21 @@ export async function POST(req) {
     if (!imageBase64 || !mediaType) {
       return NextResponse.json(
         { error: "Request must include imageBase64 and mediaType." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (!ALLOWED_TYPES.includes(mediaType)) {
       return NextResponse.json(
-        { error: `Unsupported image type ${mediaType}. Use JPEG, PNG, WebP, or GIF.` },
-        { status: 400 }
+        {
+          error: `Unsupported image type ${mediaType}. Use JPEG, PNG, WebP, or GIF.`,
+        },
+        { status: 400 },
       );
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3-flash-preview",
       contents: [
         {
           role: "user",
@@ -85,27 +90,27 @@ export async function POST(req) {
             {
               inlineData: {
                 mimeType: mediaType,
-                data: imageBase64
-              }
+                data: imageBase64,
+              },
             },
             {
-              text: "Analyse this writing sample for dyslexia-associated indicators. Respond with the JSON object only."
-            }
-          ]
-        }
+              text: "Analyse this writing sample for dyslexia-associated indicators. Respond with the JSON object only.",
+            },
+          ],
+        },
       ],
       config: {
         systemInstruction: SYSTEM_PROMPT,
         responseMimeType: "application/json",
-        maxOutputTokens: 4000
-      }
+        maxOutputTokens: 4000,
+      },
     });
 
     const text = response.text;
     if (!text) {
       return NextResponse.json(
         { error: "Model returned no text content." },
-        { status: 502 }
+        { status: 502 },
       );
     }
 
@@ -117,7 +122,7 @@ export async function POST(req) {
     } catch {
       return NextResponse.json(
         { error: "Model response was not valid JSON.", raw: cleaned },
-        { status: 502 }
+        { status: 502 },
       );
     }
 
