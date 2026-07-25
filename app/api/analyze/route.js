@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
+import { decideVerdict } from "../../../lib/screening/verdict";
 import { createClient } from "../../../lib/supabase/server";
 
 // This route is the screening path only: image in, verdict out. The error
@@ -175,13 +176,35 @@ export async function POST(req) {
       );
     }
 
+    // The model supplies the evidence; the rule decides the verdict. Its own
+    // `verdict` label is left untouched inside `parsed` so the raw output stays
+    // auditable and the two can be compared later.
+    const decision = decideVerdict({
+      isWritingSample: parsed.isWritingSample,
+      likelihoodScore: parsed.likelihoodScore,
+      indicators: parsed.indicators,
+      writerAge,
+    });
+
+    const screening = {
+      ...parsed,
+      verdict: decision.verdict,
+      likelihoodScore: decision.score,
+      verdictHeldReason: decision.reason,
+    };
+
     // Persist the screening result for the signed-in user. A DB failure
     // should not block returning the analysis, so we only log it.
+    //
+    // The lifted columns hold the decision that was shown to the user, while
+    // `result` keeps the model's unmodified JSON. Comparing the two tells you
+    // how often the rule disagreed with the model, which is the data you need
+    // to tune the threshold.
     const { error: dbError } = await supabase.from("screenings").insert({
       user_id: user.id,
       is_writing_sample: parsed.isWritingSample ?? null,
-      verdict: parsed.verdict ?? null,
-      likelihood_score: parsed.likelihoodScore ?? null,
+      verdict: decision.verdict,
+      likelihood_score: decision.score,
       transcription: parsed.transcription ?? null,
       summary: parsed.summary ?? null,
       result: parsed,
@@ -191,7 +214,7 @@ export async function POST(req) {
       console.error("Failed to save screening:", dbError.message);
     }
 
-    return NextResponse.json(parsed);
+    return NextResponse.json(screening);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown server error";
     return NextResponse.json({ error: message }, { status: 500 });
