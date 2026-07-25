@@ -63,3 +63,16 @@ def test_answer_with_chunks_uses_model_and_cites():
     out = answer_question("how to help?", {}, CHUNKS, [], Generator(FakeClient(payload), "m"))
     assert out["answer"] == "Blend the sounds."
     assert out["citations"][0]["id"] == "c1"
+
+
+def test_compose_journey_tolerates_null_steps():
+    gen = Generator(FakeClient('{"steps": null}'), "m")
+    out = compose_journey({"primary_label": "phonological"}, CHUNKS, gen)
+    assert out["steps"] == []
+
+
+def test_answer_tolerates_null_fields():
+    gen = Generator(FakeClient('{"answer": null, "source_ids": null}'), "m")
+    out = answer_question("q", {}, CHUNKS, [], gen)
+    assert out["answer"] == NO_MATERIAL_MESSAGE
+    assert out["citations"] == []

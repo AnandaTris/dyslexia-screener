@@ -67,12 +67,12 @@ def compose_journey(profile: dict, chunks: list[dict], generator) -> dict:
     )
     data = generator.generate_json(_JOURNEY_SYSTEM, user)
     steps = []
-    for i, step in enumerate(data.get("steps", [])):
+    for i, step in enumerate(data.get("steps") or []):
         steps.append({
             "step_index": i,
-            "title": step.get("title", ""),
-            "description": step.get("description", ""),
-            "citations": _citations_for(step.get("source_ids", []), chunks),
+            "title": step.get("title") or "",
+            "description": step.get("description") or "",
+            "citations": _citations_for(step.get("source_ids") or [], chunks),
         })
     return {"steps": steps, "note": None}
 
@@ -88,6 +88,6 @@ def answer_question(question: str, profile: dict, chunks: list[dict],
     ) + f"Question: {question}\n\nSource excerpts:\n{_format_chunks(chunks)}"
     data = generator.generate_json(_CHAT_SYSTEM, user)
     return {
-        "answer": data.get("answer", NO_MATERIAL_MESSAGE),
-        "citations": _citations_for(data.get("source_ids", []), chunks),
+        "answer": data.get("answer") or NO_MATERIAL_MESSAGE,
+        "citations": _citations_for(data.get("source_ids") or [], chunks),
     }
