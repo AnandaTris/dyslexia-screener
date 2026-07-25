@@ -1,4 +1,7 @@
 /.env
+.env*.local
+!.env.example
+
 /node_modules
 /.next
 /.claude
@@ -7,3 +10,5 @@
 /.venv
 /docs/superpowers
 /docs/superpowers/plans
+.DS_Store
+.gstack/

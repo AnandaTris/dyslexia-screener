@@ -26,8 +26,10 @@ function friendlyMessage(error) {
   }
 }
 
-function failWith(error) {
-  redirect(`/login?error=${encodeURIComponent(friendlyMessage(error))}`);
+// Sign in and sign up live on separate pages now, so an error has to come back
+// to the form the user was actually filling in.
+function failWith(error, path) {
+  redirect(`${path}?error=${encodeURIComponent(friendlyMessage(error))}`);
 }
 
 export async function login(formData) {
@@ -39,7 +41,7 @@ export async function login(formData) {
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    failWith(error);
+    failWith(error, "/login");
   }
 
   redirect("/");
@@ -54,7 +56,7 @@ export async function signup(formData) {
   const { data, error } = await supabase.auth.signUp({ email, password });
 
   if (error) {
-    failWith(error);
+    failWith(error, "/signup");
   }
 
   // With email confirmation on, signing up an address that already exists
@@ -62,8 +64,8 @@ export async function signup(formData) {
   // send quota gets burned. An empty identities array is the only tell.
   if (data.user && data.user.identities?.length === 0) {
     redirect(
-      `/login?error=${encodeURIComponent(
-        "That email is already registered. Sign in instead."
+      `/login?message=${encodeURIComponent(
+        "That email is already registered — sign in below."
       )}`
     );
   }

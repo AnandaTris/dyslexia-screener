@@ -1,8 +1,37 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "../lib/supabase/client";
 import { signout } from "./login/actions";
+
+/**
+ * Reads a response body as JSON without throwing on a non-JSON body. An
+ * unauthenticated request or a dev-server error page answers with HTML, and
+ * res.json() on that throws a parser message that tells the user nothing.
+ */
+async function readJson(res) {
+  const body = await res.text();
+  try {
+    return JSON.parse(body);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * fetch() rejects with a bare TypeError whenever no HTTP response arrives at
+ * all: "Load failed" in Safari, "Failed to fetch" in Chrome. Neither tells the
+ * user anything. The usual cause here is middleware answering 401 while the
+ * image is still uploading, which drops the connection and takes the real
+ * message ("Your session expired") down with it.
+ */
+function describeFailure(err) {
+  if (err instanceof TypeError) {
+    return "Couldn't reach the server. Your session may have expired, so try signing in again.";
+  }
+  return err instanceof Error ? err.message : "Something went wrong.";
+}
 
 export default function Home() {
   const [userEmail, setUserEmail] = useState(null);
@@ -12,6 +41,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+  const [writerAge, setWriterAge] = useState("");
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -22,18 +52,23 @@ export default function Home() {
   }, []);
 
   const acceptFile = useCallback((f) => {
-    if (!f.type.startsWith("image/")) {
-      setError("Please upload an image file (JPEG, PNG, WebP, or GIF).");
+    if (!f.type.startsWith("image/") && f.type !== "application/pdf") {
+      setError("Please upload a photo (JPEG, PNG, WebP, GIF) or a PDF.");
       return;
     }
     if (f.size > 8 * 1024 * 1024) {
-      setError("Image is larger than 8 MB. Please use a smaller image.");
+      setError("File is larger than 8 MB. Please use a smaller photo or PDF.");
       return;
     }
     setError(null);
     setResult(null);
     setFile(f);
-    setPreviewUrl(URL.createObjectURL(f));
+    // Each createObjectURL pins its blob in memory until revoked, so drop the
+    // previous preview before replacing it.
+    setPreviewUrl((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return URL.createObjectURL(f);
+    });
   }, []);
 
   const onDrop = useCallback(
@@ -46,6 +81,9 @@ export default function Home() {
     [acceptFile]
   );
 
+  const parsedAge = writerAge === "" ? null : Number(writerAge);
+  const isPdf = file?.type === "application/pdf";
+
   const analyze = async () => {
     if (!file) return;
     setLoading(true);
@@ -53,29 +91,23 @@ export default function Home() {
     setResult(null);
 
     try {
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result.split(",")[1]);
-        reader.onerror = () => reject(new Error("Could not read the image."));
-        reader.readAsDataURL(file);
-      });
+      // Multipart with the raw File, not base64 inside JSON. Base64 inflates
+      // the body by a third and forces the whole encoded copy into memory
+      // before a single byte goes out; the browser streams this instead.
+      const form = new FormData();
+      form.append("file", file);
+      if (parsedAge !== null) form.append("writerAge", String(parsedAge));
 
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageBase64: base64,
-          mediaType: file.type
-        })
-      });
+      const res = await fetch("/api/analyze", { method: "POST", body: form });
 
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) {
-        throw new Error(data.error || "Analysis failed.");
+        throw new Error(data?.error || `Analysis failed (${res.status}).`);
       }
+      if (!data) throw new Error("The server returned an unreadable response.");
       setResult(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(describeFailure(err));
     } finally {
       setLoading(false);
     }
@@ -83,7 +115,10 @@ export default function Home() {
 
   const reset = () => {
     setFile(null);
-    setPreviewUrl(null);
+    setPreviewUrl((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return null;
+    });
     setResult(null);
     setError(null);
     if (inputRef.current) inputRef.current.value = "";
@@ -98,16 +133,21 @@ export default function Home() {
             Flags written-output patterns associated with dyslexia
           </span>
         </div>
-        {userEmail && (
-          <div className="user-bar">
-            <span className="user-email">{userEmail}</span>
-            <form action={signout}>
-              <button type="submit" className="btn btn-ghost">
-                Sign out
-              </button>
-            </form>
-          </div>
-        )}
+        <div className="user-bar">
+          <Link className="nav-link" href="/analysis">
+            Error pattern analyser
+          </Link>
+          {userEmail && (
+            <>
+              <span className="user-email">{userEmail}</span>
+              <form action={signout}>
+                <button type="submit" className="btn btn-ghost">
+                  Sign out
+                </button>
+              </form>
+            </>
+          )}
+        </div>
       </header>
 
       <div className="disclaimer-band" role="note">
@@ -118,8 +158,9 @@ export default function Home() {
       </div>
 
       <div className="columns">
-        <section className="upload-card" aria-label="Upload writing sample">
-          <h2>1. Upload a writing sample</h2>
+        <section className="upload-card" aria-label="Upload a writing sample">
+          <h2>1. Upload the handwriting</h2>
+
           <div
             className={`dropzone ${dragging ? "dragging" : ""}`}
             role="button"
@@ -139,16 +180,16 @@ export default function Home() {
               <span>{file.name}</span>
             ) : (
               <span>
-                Drag an image here or click to browse.
+                Drag a photo or PDF here, or click to browse.
                 <br />
-                Clear photos of a full paragraph work best.
+                Clear scans of a full paragraph work best.
               </span>
             )}
           </div>
           <input
             ref={inputRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
+            accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
             hidden
             onChange={(e) => {
               const f = e.target.files?.[0];
@@ -156,17 +197,50 @@ export default function Home() {
             }}
           />
 
+          {/* <img> cannot render a PDF, so PDFs get the browser's own viewer
+              via <object>. The fallback inside it shows when a browser has no
+              built-in viewer. */}
           {previewUrl && (
             <div className="preview">
-              <img src={previewUrl} alt="Preview of uploaded writing sample" />
+              {isPdf ? (
+                <object
+                  data={previewUrl}
+                  type="application/pdf"
+                  aria-label={`Preview of ${file?.name ?? "the uploaded PDF"}`}
+                >
+                  <p className="preview-fallback">
+                    {file?.name} — your browser can&apos;t preview PDFs, but the
+                    file will still be analysed.
+                  </p>
+                </object>
+              ) : (
+                <img src={previewUrl} alt="Preview of uploaded writing sample" />
+              )}
             </div>
           )}
+
+          <label className="auth-label" htmlFor="writer-age">
+            Writer&apos;s age (optional)
+          </label>
+          <input
+            id="writer-age"
+            className="auth-input age-input"
+            type="number"
+            min="3"
+            max="99"
+            value={writerAge}
+            onChange={(e) => setWriterAge(e.target.value)}
+            placeholder="e.g. 9"
+          />
+          <p className="auth-hint">
+            Used only to judge whether reversals are developmentally expected.
+          </p>
 
           <div className="actions">
             <button
               className="btn btn-primary"
               onClick={analyze}
-              disabled={!file || loading}
+              disabled={loading || !file}
             >
               {loading ? (
                 <>
@@ -174,7 +248,7 @@ export default function Home() {
                   Analysing…
                 </>
               ) : (
-                "Analyse sample"
+                "Screen this sample"
               )}
             </button>
             {file && (
@@ -198,9 +272,9 @@ export default function Home() {
         >
           {!result && !loading && (
             <p className="empty-state">
-              Results will appear here after analysis. The screener looks for
-              letter reversals, transpositions, phonetic spelling, omissions,
-              inconsistent spacing and sizing, and homophone confusion.
+              Results will appear here. The sample is read for letter reversals,
+              transpositions, phonetic spelling, omissions, spacing and sizing,
+              then scored for whether a formal assessment is worth pursuing.
             </p>
           )}
 
@@ -241,6 +315,12 @@ export default function Home() {
                 <div className="gauge-label">
                   Evidence strength: {result.likelihoodScore}/100
                 </div>
+                {/* Only set when the rule overrode a score that would
+                    otherwise have read "likely". Without it the banner and
+                    the gauge look like they contradict each other. */}
+                {result.verdictHeldReason && (
+                  <p className="verdict-held">{result.verdictHeldReason}</p>
+                )}
                 <p className="verdict-reasoning">{result.verdictReasoning}</p>
               </div>
 
@@ -282,6 +362,15 @@ export default function Home() {
                 <>
                   <h3 className="section-label">Transcription</h3>
                   <p className="transcription">{result.transcription}</p>
+                  <p className="auth-hint">
+                    To break these spellings down into phonological,
+                    orthographic, morphological and visual error patterns, paste
+                    this into the{" "}
+                    <Link className="nav-link" href="/analysis">
+                      error pattern analyser
+                    </Link>
+                    .
+                  </p>
                 </>
               )}
 

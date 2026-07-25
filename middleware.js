@@ -33,9 +33,21 @@ export async function middleware(request) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isLoginPage = request.nextUrl.pathname.startsWith("/login");
+  const { pathname } = request.nextUrl;
+  const isLoginPage = pathname.startsWith("/login") || pathname.startsWith("/signup");
+  const isApiRoute = pathname.startsWith("/api/");
 
   if (!user && !isLoginPage) {
+    // Redirecting an API request sends the caller an HTML login page, which
+    // blows up on res.json(). Answer with JSON so the client can show the
+    // real reason — typically a session that expired with the page open.
+    if (isApiRoute) {
+      return NextResponse.json(
+        { error: "Your session expired. Please sign in again." },
+        { status: 401 }
+      );
+    }
+
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

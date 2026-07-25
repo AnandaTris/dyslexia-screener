@@ -9,13 +9,19 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "warm:nlp": "node scripts/warm-nlp.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.9.0",
+    "@huggingface/transformers": "^4.2.0",
     "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.110.8",
+    "cmu-pronouncing-dictionary": "^3.0.0",
+    "dictionary-en": "^4.0.0",
+    "double-metaphone": "^2.0.1",
     "next": "^14.2.15",
+    "nspell": "^2.1.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   }
