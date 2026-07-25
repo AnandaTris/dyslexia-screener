@@ -1,11 +1,18 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
+import { decideVerdict } from "../../../lib/screening/verdict";
+import { createClient } from "../../../lib/supabase/server";
 
-export const maxDuration = 60;
+// This route is the screening path only: image in, verdict out. The error
+// pattern analyser lives on /api/analyze-text so that loading its grammar
+// model never sits between an upload and its screening result.
+export const runtime = "nodejs";
+export const maxDuration = 120;
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 const SYSTEM_PROMPT = `You are a literacy screening assistant used by educators. You analyse images of handwritten or typed writing samples for surface-level indicators that are RESEARCH-ASSOCIATED with dyslexia. You are NOT a diagnostic tool and you must never claim someone has or does not have dyslexia.
 
@@ -52,32 +59,80 @@ Rules:
 
 export async function POST(req) {
   try {
+    // Require an authenticated user before spending any Gemini quota.
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "You must be signed in to analyse a sample." },
+        { status: 401 },
+      );
+    }
+
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
-        { error: "Server is missing GEMINI_API_KEY. Add it to .env.local and restart." },
-        { status: 500 }
+        {
+          error:
+            "Server is missing GEMINI_API_KEY. Add it to .env.local and restart.",
+        },
+        { status: 500 },
       );
     }
 
-    const body = await req.json();
-    const { imageBase64, mediaType } = body;
-
-    if (!imageBase64 || !mediaType) {
+    // The client posts multipart/form-data carrying the raw file. Base64 in a
+    // JSON body cost a third more bytes on the wire for no benefit: Gemini
+    // needs the encoding, but it can be done here, off the network path.
+    const form = await req.formData().catch(() => null);
+    if (!form) {
       return NextResponse.json(
-        { error: "Request must include imageBase64 and mediaType." },
-        { status: 400 }
+        { error: "Request must be multipart/form-data with an image field." },
+        { status: 400 },
       );
     }
 
+    const image = form.get("image");
+    if (!image || typeof image === "string") {
+      return NextResponse.json(
+        { error: "Request must include an image file." },
+        { status: 400 },
+      );
+    }
+
+    const mediaType = image.type;
     if (!ALLOWED_TYPES.includes(mediaType)) {
       return NextResponse.json(
-        { error: `Unsupported image type ${mediaType}. Use JPEG, PNG, WebP, or GIF.` },
-        { status: 400 }
+        {
+          error: `Unsupported image type ${mediaType || "unknown"}. Use JPEG, PNG, WebP, or GIF.`,
+        },
+        { status: 400 },
       );
     }
 
+    if (image.size > MAX_IMAGE_BYTES) {
+      return NextResponse.json(
+        { error: "Image is larger than 8 MB. Please use a smaller image." },
+        { status: 413 },
+      );
+    }
+
+    const rawAge = Number(form.get("writerAge"));
+    const writerAge =
+      Number.isFinite(rawAge) && rawAge > 0 && rawAge < 120 ? Math.round(rawAge) : null;
+
+    const imageBase64 = Buffer.from(await image.arrayBuffer()).toString("base64");
+
+    // The system prompt discounts reversals for young writers, so a known age
+    // has to reach the model. Without it the model can only guess the age from
+    // the handwriting itself.
+    const agePreamble = writerAge
+      ? `The writer is ${writerAge} years old. Weigh developmental expectations for that age.\n`
+      : "";
+
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3-flash-preview",
       contents: [
         {
           role: "user",
@@ -85,27 +140,27 @@ export async function POST(req) {
             {
               inlineData: {
                 mimeType: mediaType,
-                data: imageBase64
-              }
+                data: imageBase64,
+              },
             },
             {
-              text: "Analyse this writing sample for dyslexia-associated indicators. Respond with the JSON object only."
-            }
-          ]
-        }
+              text: `${agePreamble}Analyse this writing sample for dyslexia-associated indicators. Respond with the JSON object only.`,
+            },
+          ],
+        },
       ],
       config: {
         systemInstruction: SYSTEM_PROMPT,
         responseMimeType: "application/json",
-        maxOutputTokens: 4000
-      }
+        maxOutputTokens: 4000,
+      },
     });
 
     const text = response.text;
     if (!text) {
       return NextResponse.json(
         { error: "Model returned no text content." },
-        { status: 502 }
+        { status: 502 },
       );
     }
 
@@ -117,11 +172,49 @@ export async function POST(req) {
     } catch {
       return NextResponse.json(
         { error: "Model response was not valid JSON.", raw: cleaned },
-        { status: 502 }
+        { status: 502 },
       );
     }
 
-    return NextResponse.json(parsed);
+    // The model supplies the evidence; the rule decides the verdict. Its own
+    // `verdict` label is left untouched inside `parsed` so the raw output stays
+    // auditable and the two can be compared later.
+    const decision = decideVerdict({
+      isWritingSample: parsed.isWritingSample,
+      likelihoodScore: parsed.likelihoodScore,
+      indicators: parsed.indicators,
+      writerAge,
+    });
+
+    const screening = {
+      ...parsed,
+      verdict: decision.verdict,
+      likelihoodScore: decision.score,
+      verdictHeldReason: decision.reason,
+    };
+
+    // Persist the screening result for the signed-in user. A DB failure
+    // should not block returning the analysis, so we only log it.
+    //
+    // The lifted columns hold the decision that was shown to the user, while
+    // `result` keeps the model's unmodified JSON. Comparing the two tells you
+    // how often the rule disagreed with the model, which is the data you need
+    // to tune the threshold.
+    const { error: dbError } = await supabase.from("screenings").insert({
+      user_id: user.id,
+      is_writing_sample: parsed.isWritingSample ?? null,
+      verdict: decision.verdict,
+      likelihood_score: decision.score,
+      transcription: parsed.transcription ?? null,
+      summary: parsed.summary ?? null,
+      result: parsed,
+    });
+
+    if (dbError) {
+      console.error("Failed to save screening:", dbError.message);
+    }
+
+    return NextResponse.json(screening);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown server error";
     return NextResponse.json({ error: message }, { status: 500 });
