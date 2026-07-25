@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { takeHandoff } from "../../lib/screening/handoff";
 import { createClient } from "../../lib/supabase/client";
 import ErrorAnalysis from "../components/ErrorAnalysis";
 import { signout } from "../login/actions";
@@ -34,12 +35,31 @@ export default function AnalysisPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [analysis, setAnalysis] = useState(null);
+  const [fromScreener, setFromScreener] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
     supabase.auth
       .getUser()
       .then(({ data }) => setUserEmail(data.user?.email ?? null));
+  }, []);
+
+  /**
+   * Picks up a sample handed over by the screener. Runs in an effect because
+   * sessionStorage does not exist during server rendering, and reads once on
+   * mount because the handoff is consumed and erased on read.
+   *
+   * The text is filled in but deliberately not analysed automatically: it came
+   * from a vision transcription, and every error category below is computed by
+   * comparing the writing to its intended spelling. A misread letter would show
+   * up as the student's error. The educator checks it first.
+   */
+  useEffect(() => {
+    const handoff = takeHandoff();
+    if (!handoff) return;
+    setSampleText(handoff.text);
+    if (handoff.writerAge !== null) setWriterAge(String(handoff.writerAge));
+    setFromScreener(true);
   }, []);
 
   const trimmed = sampleText.trim();
@@ -78,6 +98,7 @@ export default function AnalysisPage() {
     setSampleText("");
     setAnalysis(null);
     setError(null);
+    setFromScreener(false);
   };
 
   return (
@@ -116,6 +137,18 @@ export default function AnalysisPage() {
       <div className="columns">
         <section className="upload-card" aria-label="Add a writing sample">
           <h2>1. Paste the writing</h2>
+
+          {/* The handed-over text is a machine transcription of handwriting, so
+              it is presented as something to check rather than something that
+              is already correct. */}
+          {fromScreener && (
+            <div className="handoff-note" role="status">
+              Filled in from the screening you just ran.{" "}
+              <strong>Check it against the original</strong> — this was read off
+              the handwriting automatically, and any letter it misread will be
+              counted as the student&apos;s error.
+            </div>
+          )}
 
           <label className="auth-label" htmlFor="sample-text">
             Type or paste the student&apos;s writing

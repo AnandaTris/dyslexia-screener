@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { stashHandoff } from "../lib/screening/handoff";
 import { createClient } from "../lib/supabase/client";
 import { signout } from "./login/actions";
 
@@ -43,6 +45,7 @@ export default function Home() {
   const [result, setResult] = useState(null);
   const [writerAge, setWriterAge] = useState("");
   const inputRef = useRef(null);
+  const router = useRouter();
 
   useEffect(() => {
     const supabase = createClient();
@@ -111,6 +114,16 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  };
+
+  /**
+   * Hands the transcription to the analyser and navigates there. The stash is
+   * best-effort: if sessionStorage refused it we still go, because the analyser
+   * with an empty box is a worse experience but not a broken one.
+   */
+  const identifyPattern = () => {
+    stashHandoff({ text: result?.transcription, writerAge: parsedAge });
+    router.push("/analysis");
   };
 
   const reset = () => {
@@ -322,6 +335,27 @@ export default function Home() {
                   <p className="verdict-held">{result.verdictHeldReason}</p>
                 )}
                 <p className="verdict-reasoning">{result.verdictReasoning}</p>
+
+                {/* Only offered on a "likely" verdict, which already carries
+                    the score cutoff and the developmental safeguard — a sample
+                    held at "unlikely" should not be invited to go looking for a
+                    type. Needs a transcription to hand over; without one the
+                    analyser has nothing to work from. */}
+                {result.verdict === "likely" && result.transcription && (
+                  <div className="verdict-actions">
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={identifyPattern}
+                    >
+                      Identify the error pattern →
+                    </button>
+                    <p className="auth-hint">
+                      Opens the analyser with this transcription filled in, so
+                      you can check it against the original before analysing.
+                    </p>
+                  </div>
+                )}
               </div>
 
               <p className="summary">{result.summary}</p>

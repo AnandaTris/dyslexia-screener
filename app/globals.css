@@ -240,6 +240,21 @@ h3 {
   font-size: 0.9rem;
 }
 
+/* Confirms on the analyser page that the textarea was pre-filled by the
+   screener, and that the text is a transcription worth checking. Informational
+   rather than an error, so it borrows the banner shape without the alarm. */
+.handoff-note {
+  margin-bottom: 14px;
+  background: var(--paper-deep);
+  border: 1px solid var(--card-border);
+  border-left: 4px solid var(--ink);
+  border-radius: 0 8px 8px 0;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
 /* Results sheet: ruled exercise-book page */
 .sheet {
   background: repeating-linear-gradient(
@@ -338,6 +353,19 @@ h3 {
 .verdict-reasoning {
   font-size: 0.92rem;
   color: var(--ink-soft);
+  margin-top: 8px;
+}
+
+/* The handoff into the error pattern analyser. Sits at the foot of the verdict
+   banner, separated by a rule so it reads as the step that follows the verdict
+   rather than another line of its reasoning. */
+.verdict-actions {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--card-border);
+}
+
+.verdict-actions .auth-hint {
   margin-top: 8px;
 }
 
