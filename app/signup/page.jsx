@@ -1,12 +1,12 @@
 import Link from "next/link";
 import PasswordField from "../components/PasswordField";
-import { login } from "./actions";
+import { signup } from "../login/actions";
 
 export const metadata = {
-  title: "Sign in — Writing Sample Screener",
+  title: "Create an account — Writing Sample Screener",
 };
 
-export default async function LoginPage({ searchParams }) {
+export default async function SignupPage({ searchParams }) {
   const params = await searchParams;
   const error = params?.error;
   const message = params?.message;
@@ -15,8 +15,10 @@ export default async function LoginPage({ searchParams }) {
     <main className="auth-shell">
       <section className="auth-card" aria-labelledby="auth-heading">
         <div className="auth-brand">
-          <h1 id="auth-heading">Writing Sample Screener</h1>
-          <p className="auth-subtitle">Sign in to screen and save writing samples.</p>
+          <h1 id="auth-heading">Create an account</h1>
+          <p className="auth-subtitle">
+            Screening results are saved to your account and visible only to you.
+          </p>
         </div>
 
         {error && (
@@ -30,7 +32,7 @@ export default async function LoginPage({ searchParams }) {
           </div>
         )}
 
-        <form className="auth-form" action={login}>
+        <form className="auth-form" action={signup}>
           <label className="auth-label" htmlFor="email">
             Email
           </label>
@@ -43,15 +45,18 @@ export default async function LoginPage({ searchParams }) {
             required
           />
 
-          <PasswordField autoComplete="current-password" />
+          <PasswordField
+            autoComplete="new-password"
+            hint="At least 6 characters."
+          />
 
           <button className="btn btn-primary btn-block" type="submit">
-            Sign in
+            Create account
           </button>
         </form>
 
         <p className="auth-switch">
-          Don&apos;t have an account? <Link href="/signup">Create one</Link>
+          Already have an account? <Link href="/login">Sign in</Link>
         </p>
       </section>
     </main>

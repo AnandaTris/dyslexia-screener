@@ -33,8 +33,9 @@ export async function middleware(request) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isLoginPage = request.nextUrl.pathname.startsWith("/login");
-  const isApiRoute = request.nextUrl.pathname.startsWith("/api/");
+  const { pathname } = request.nextUrl;
+  const isLoginPage = pathname.startsWith("/login") || pathname.startsWith("/signup");
+  const isApiRoute = pathname.startsWith("/api/");
 
   if (!user && !isLoginPage) {
     // Redirecting an API request sends the caller an HTML login page, which
