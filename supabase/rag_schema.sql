@@ -73,6 +73,8 @@ create table if not exists public.chat_messages (
 create index if not exists journeys_user_idx on public.journeys (user_id, created_at desc);
 create index if not exists journey_steps_journey_idx on public.journey_steps (journey_id, step_index);
 create index if not exists chat_messages_user_idx on public.chat_messages (user_id, created_at desc);
+create index if not exists document_chunks_document_id_idx on public.document_chunks (document_id);
+create index if not exists chat_messages_journey_id_idx on public.chat_messages (journey_id);
 
 -- ---------- RLS: users see only their own rows ----------
 alter table public.learner_profiles enable row level security;
@@ -110,12 +112,16 @@ create or replace function public.match_document_chunks(
 ) returns table (
   id uuid, document_id uuid, content text, chunk_index int,
   metadata jsonb, title text, similarity float
-) language sql stable as $$
+) language sql stable
+  set search_path = public, pg_temp
+as $$
   select dc.id, dc.document_id, dc.content, dc.chunk_index, dc.metadata,
          d.title, 1 - (dc.embedding <=> query_embedding) as similarity
   from public.document_chunks dc
   join public.documents d on d.id = dc.document_id
-  where filter_profiles is null or d.target_profiles && filter_profiles
+  where filter_profiles is null
+     or cardinality(d.target_profiles) = 0
+     or d.target_profiles && filter_profiles
   order by dc.embedding <=> query_embedding
   limit match_count;
 $$;

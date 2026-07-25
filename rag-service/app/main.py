@@ -1,3 +1,5 @@
+import hmac
+
 import ollama
 from fastapi import Depends, FastAPI, Header, HTTPException
 
@@ -15,7 +17,7 @@ app = FastAPI(title="Dyslexia RAG Service")
 
 def require_service_token(x_service_token: str = Header(default="")) -> None:
     settings = get_settings()
-    if not settings.service_token or x_service_token != settings.service_token:
+    if not settings.service_token or not hmac.compare_digest(x_service_token, settings.service_token):
         raise HTTPException(status_code=401, detail="Invalid service token")
 
 

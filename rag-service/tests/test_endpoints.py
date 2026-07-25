@@ -2,6 +2,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app, require_service_token, get_embedder, get_generator, get_db
+from app import main as main_module
+from app.config import Settings
 
 
 class FakeEmbedder:
@@ -64,3 +66,38 @@ def test_chat_endpoint(api):
     assert res.status_code == 200
     assert res.json()["answer"] == "grounded"
     assert res.json()["citations"][0]["id"] == "c1"
+
+
+def _fakes_with_token(monkeypatch):
+    app.dependency_overrides[get_embedder] = lambda: FakeEmbedder()
+    app.dependency_overrides[get_generator] = lambda: FakeGenerator()
+    app.dependency_overrides[get_db] = lambda: FakeDb()
+    monkeypatch.setattr(main_module, "get_settings", lambda: Settings(service_token="secret"))
+
+
+def test_ingest_rejects_wrong_token(monkeypatch):
+    _fakes_with_token(monkeypatch)
+    try:
+        res = TestClient(app).post(
+            "/ingest",
+            headers={"X-Service-Token": "wrong"},
+            json={"title": "T", "doc_type": "guide", "text": "some material to chunk"},
+        )
+        assert res.status_code == 401
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_ingest_accepts_correct_token(monkeypatch):
+    _fakes_with_token(monkeypatch)
+    try:
+        res = TestClient(app).post(
+            "/ingest",
+            headers={"X-Service-Token": "secret"},
+            json={"title": "T", "doc_type": "guide", "target_profiles": ["phonological"],
+                  "text": "some material to chunk and embed"},
+        )
+        assert res.status_code == 200
+        assert res.json()["document_id"] == "doc-1"
+    finally:
+        app.dependency_overrides.clear()
