@@ -88,4 +88,35 @@ describe("Integrated Test 1 — Sign Up", () => {
     expect(redirected.pathname).toBe("/login");
     expect(redirected.params.message).toMatch(/Account created/i);
   });
+
+  it("error: an invalid address is rejected and no account is created", async () => {
+    const redirected = await captureRedirect(() =>
+      signup(formDataOf({ email: "not-an-email", password: "correct-horse" })),
+    );
+
+    // EmailVerificationService was consulted and refused, so the chain stopped
+    // before UserRepository was ever reached.
+    expect(emailVerificationService.calls).toEqual(["not-an-email"]);
+    expect(userRepository.calls).toEqual([]);
+    expect(userRepository.all()).toEqual([]);
+
+    // The error comes back to the form the user was filling in.
+    expect(redirected.pathname).toBe("/signup");
+    expect(redirected.params.error).toBeTruthy();
+  });
+
+  it("error: an already registered address does not create a second account", async () => {
+    const fields = { email: "teacher@school.edu", password: "correct-horse" };
+    await captureRedirect(() => signup(formDataOf(fields)));
+
+    const redirected = await captureRedirect(() => signup(formDataOf(fields)));
+
+    // Supabase does NOT error on a duplicate address — it succeeds and silently
+    // re-sends the confirmation mail, which is how the project's email quota
+    // gets burned. The empty `identities` array is the only tell, and the action
+    // has to read it to keep the user out of a second dead-end sign-up.
+    expect(userRepository.all()).toHaveLength(1);
+    expect(redirected.pathname).toBe("/login");
+    expect(redirected.params.message).toMatch(/already registered/i);
+  });
 });

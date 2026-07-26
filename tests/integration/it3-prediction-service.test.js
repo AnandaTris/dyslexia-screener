@@ -90,4 +90,36 @@ describe("Integrated Test 3 — Prediction Service", () => {
     expect(body.verdict).toBe("likely");
     expect(body.likelihoodScore).toBe(72);
   });
+
+  it("error: no file in the placeholder, so nothing is sent to the model or stored", async () => {
+    const response = await POST(screeningRequest({ writerAge: 9 }));
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe(
+      "Request must include a photo or PDF of the writing.",
+    );
+
+    // The check happens before any Gemini quota is spent, and the flow stops
+    // there — no sample, no verdict, no row.
+    expect(mocks.model.value.calls).toHaveLength(0);
+    expect(mocks.client.value.rowsIn("screenings")).toEqual([]);
+  });
+
+  it("error: the model fails to return evidence, so no verdict is invented", async () => {
+    mocks.model.value = createFakeDyslexiaModel({ throws: new Error("Gemini unavailable") });
+
+    const response = await POST(screeningRequest({ file: writingSampleFile(), writerAge: 9 }));
+    const body = await response.json();
+
+    // The failure is surfaced, not turned into a default verdict — an
+    // "unlikely" produced by an error would be indistinguishable from a real one.
+    expect(response.status).toBe(500);
+    expect(body.error).toBe("Gemini unavailable");
+    expect(body.verdict).toBeUndefined();
+
+    // Deviation (1) again, from the other side: because the sample is only
+    // written after the model returns, a model failure loses the upload
+    // entirely. Nothing reaches the repository.
+    expect(mocks.client.value.rowsIn("screenings")).toEqual([]);
+  });
 });
