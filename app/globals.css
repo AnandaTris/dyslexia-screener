@@ -934,3 +934,120 @@ h3 {
   font-size: 0.88rem;
   margin-top: 12px;
 }
+
+/* ---- Dashboard hub ---- */
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin: 24px 0;
+}
+
+.dash-card {
+  display: block;
+  padding: 20px;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: var(--paper);
+  text-decoration: none;
+  color: inherit;
+}
+
+a.dash-card:hover {
+  border-color: var(--ink);
+}
+
+a.dash-card:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.dash-card h2 {
+  font-size: 1.15rem;
+  margin-bottom: 6px;
+}
+
+.dash-card p {
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
+.dash-card-static {
+  cursor: default;
+}
+
+/* ---- Learning assistant ---- */
+
+.assistant-panel {
+  margin-top: 16px;
+  padding: 20px;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.assistant-note {
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  margin-top: 4px;
+}
+
+.chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 16px 0;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.chat-msg {
+  padding: 10px 13px;
+  border-radius: 10px;
+  max-width: 90%;
+  font-size: 0.95rem;
+}
+
+.chat-msg.user {
+  align-self: flex-end;
+  background: var(--rule-blue);
+}
+
+.chat-msg.assistant {
+  align-self: flex-start;
+  background: var(--paper-deep);
+}
+
+.chat-citations {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  margin-top: 6px;
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-input-row input {
+  flex: 1;
+  font-family: var(--font-body), sans-serif;
+  font-size: 1rem;
+  padding: 10px 12px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.chat-input-row input:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.chat-offline {
+  color: var(--flag-strong);
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+}
