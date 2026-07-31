@@ -75,8 +75,8 @@ describe("UC2 + UC7 — Login", () => {
       password: "correct-horse",
     });
 
-    // Logged in: dropped on the screener, with no error in the URL.
-    expect(redirected.pathname).toBe("/");
+    // Logged in: dropped on the dashboard hub, with no error in the URL.
+    expect(redirected.pathname).toBe("/dashboard");
     expect(redirected.params.error).toBeUndefined();
   });
 

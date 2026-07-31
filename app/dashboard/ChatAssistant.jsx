@@ -2,8 +2,12 @@
 
 import { useState } from "react";
 
-export default function ChatAssistant() {
-  const [messages, setMessages] = useState([]); // {role, content, citations?}
+// `initialMessages` is server-rendered from chat_messages. Without it the log
+// looked empty after every reload while the route still fed the last turns back
+// to the model — so the assistant remembered a conversation the page had thrown
+// away, and follow-up questions read as non-sequiturs.
+export default function ChatAssistant({ initialMessages = [] }) {
+  const [messages, setMessages] = useState(initialMessages); // {role, content, citations?}
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);

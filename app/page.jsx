@@ -152,6 +152,9 @@ export default function Home() {
           </Link>
           {userEmail && (
             <>
+              <Link className="nav-link" href="/dashboard">
+                Dashboard
+              </Link>
               <span className="user-email">{userEmail}</span>
               <form action={signout}>
                 <button type="submit" className="btn btn-ghost">

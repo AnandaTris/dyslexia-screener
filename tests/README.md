@@ -1,15 +1,21 @@
 # Test plan → tests
 
-Traceability for the ESC Team 6 test plan. **One test per case in that document**,
-and nothing else: 12 table rows plus 4 sequence diagrams = 16 tests, of which 15
-pass and 1 is skipped because the feature does not exist.
+Traceability for the ESC Team 6 test plan. **This directory holds one test per case
+in that document, and nothing else**: 12 table rows plus 4 sequence diagrams = 16
+tests, of which 15 pass and 1 is skipped because the feature does not exist.
+
+The repository has more tests than these. Suites colocated with their source
+(`lib/`, `app/api/`, `app/login/`) cover code no row of the plan reaches — the NLP
+pipeline, the verdict rule, the RAG integration. `npm test` runs everything;
+`npm run test:unit` and `npm run test:integration` run only the plan-scoped suites
+below.
 
 ## Running them
 
 ```bash
-npm test                  # 11 tests: UC1-UC3, UC6-UC8, integrated 1-3
-npm run test:unit
-npm run test:integration
+npm test                  # everything
+npm run test:unit         # plan cases 1-12
+npm run test:integration  # plan cases 13-16
 npm run test:watch
 ```
 
@@ -104,23 +110,31 @@ gap the README lists under "Still to do".
 
 ## Not covered, deliberately
 
-The suite is scoped to the plan's 16 cases. These were written and then removed to
-keep that one-to-one mapping, and are worth knowing about before the final report,
-whose rubric asks for boundary cases, negative cases, and both frontend and backend
-unit testing:
+This directory is scoped to the plan's 16 cases. Anything outside them was kept out
+of `tests/` to preserve the one-to-one mapping — but several gaps listed here have
+since been closed by colocated suites elsewhere in the repo:
 
-- **`lib/screening/verdict.js`** — the score threshold and the guard that holds a
+- ✅ **`lib/screening/verdict.js`** — now covered directly by
+  `lib/screening/verdict.test.js`: the score threshold and the guard that holds a
   verdict at "unlikely" when a young writer's only indicators are letter reversals.
-  This is the project's most defensible design decision; it is now exercised only
-  incidentally, through cases 7 and 15.
+- ✅ **`lib/nlp/` (PS4)** — `analyze`, `classify`, `gec`, `lexicon` and `tokenize`
+  now have colocated suites. The remaining six modules (`g2p`, `phonemes`,
+  `morphology`, `align`, `taxonomy`, `persist`) are still exercised only through
+  those five.
+- ✅ **The error-analysis route** — `app/api/analyze-text/route.test.js`.
+- ✅ **Auth server actions** — `app/login/actions.test.js`, beyond what cases 1-6
+  require.
+
+Still open, and worth knowing about before the final report, whose rubric asks for
+boundary cases, negative cases, and both frontend and backend unit testing:
+
 - **Frontend components** — `PasswordField` and `ErrorAnalysis` have no tests. A
   rendering bug in the latter is indistinguishable from a wrong analysis.
 - **`middleware.js`** — route protection: anonymous requests redirected, API routes
-  answered with JSON 401, session token refreshed. The app's only auth boundary.
+  answered with JSON 401, session token refreshed. The app's only auth boundary, and
+  currently exercised only incidentally through case 14.
 - **Error paths on the screening route** — oversized upload, unsupported file type,
   anonymous caller, unparseable model response, repository failure.
-- **`lib/nlp/` (PS4)** — eleven modules, never tested. No row of the plan covers
-  them either.
 
 ## Not in the plan at all
 

@@ -1,5 +1,9 @@
 # --- Secrets / env ---
+# `**/.env` is belt-and-braces: rag-service/.env holds a Supabase *service-role*
+# key, which bypasses row-level security entirely. rag-service/.gitignore covers
+# it too, and one of the two failing open is not a risk worth carrying.
 /.env
+**/.env
 .env*.local
 !.env.example
 
@@ -19,6 +23,8 @@ next-env.d.ts
 __pycache__
 *.py[cod]
 .pytest_cache/
+build/
+*.egg-info/
 
 # --- Logs ---
 *.log
@@ -34,6 +40,13 @@ yarn-error.log*
 Thumbs.db
 Desktop.ini
 *.swp
+.vscode/
+.idea/
+
+# --- Build / tooling scratch ---
+/dist
+*.tsbuildinfo
+.eslintcache
 
 # --- Tooling / agent scratch (working-tree only) ---
 /.claude
