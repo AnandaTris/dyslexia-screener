@@ -11,7 +11,7 @@ analyser, the RAG learning assistant **and** the full test plan suite in one pla
 ## TL;DR
 
 - **The branch is consolidated.** `jer` = everything on `master` + the RAG work.
-- **`npm test` — 111 passed, 22 files.** `npm run build` — clean.
+- **`npm test` — 113 passed, 22 files.** `npm run build` — clean.
   `rag-service` pytest — **34 passed, 1 skipped** (the skip is the download feature
   that does not exist; see `tests/README.md` note 5).
 - **All of Plan 3 plus this session's refinements are uncommitted.** Commit block below.
@@ -61,6 +61,10 @@ git commit -m "feat(web): complete the dashboard hub and restore the chat log"
 # 7. Reach the hub from the other pages
 git add app/page.jsx app/analysis/page.jsx
 git commit -m "feat(web): link the screener and analyser back to the dashboard"
+
+# 7b. Tell a slow model apart from a dead service
+git add lib/ragService.js lib/ragService.test.js
+git commit -m "fix(web): report a RAG timeout as a timeout, not as an offline service"
 
 # 8. Repo hygiene
 git add .gitignore
@@ -160,6 +164,56 @@ verdict rule as untested, but master's own later commits had covered them.
 
 ---
 
+### 7. Proved the JS ↔ Python integration end to end, without any secrets
+
+Ran the real FastAPI service with an in-memory vector store swapped in for pgvector
+(FastAPI `dependency_overrides`, settings via environment variables so nothing read the
+real `.env`), then drove it through **`lib/ragService.js` itself** — the same function
+`/api/chat` calls. Real chunking, real `nomic-embed-text` embeddings, real cosine
+ranking, real generation.
+
+It works: a grounded answer drawn from the sample document, with the citation resolved
+to a real chunk. The off-topic guard, the offline path and the token-mismatch path all
+behaved correctly.
+
+**But it is far too slow on this machine, and that exposed a defect.**
+
+| | |
+|---|---|
+| One answer with `olmo2` | **187 seconds** |
+| Old client timeout | 30 seconds |
+| GPU | Intel Iris Xe, **1 GB VRAM** |
+| `ollama ps` | `olmo2` 6.7 GB — **100% CPU** |
+
+The model cannot fit in 1 GB of VRAM, so Ollama silently runs it on the CPU. In a
+browser the request would always have aborted — and `lib/ragService.js` reported that
+abort as `offline: true`, showing *"The learning assistant is offline. Start the Python
+RAG service"* while the service was running and mid-answer. That points whoever reads it
+at the one component that is not broken.
+
+Fixed: a `TimeoutError` is now told apart from an unreachable service and carries its own
+message naming the real cause; the budget is 120s by default and overridable with
+`RAG_SERVICE_TIMEOUT_MS`. Two new tests. The README now documents checking `ollama ps`
+and sizing the model to the hardware, and the troubleshooting section distinguishes the
+two messages.
+
+**Model choice: `llama3.2:3b`.** Measured on this machine, same question, same corpus:
+
+| Model | Cold (incl. load) | Warm |
+|---|---|---|
+| `olmo2:latest` (4.5 GB) | — | **187 s** |
+| `llama3.2:3b` (2.0 GB) | 38.2 s | **6.7 s** |
+
+Both still run 100% on CPU; the 3B model simply fits the machine. 6.7 s is a usable chat
+latency. Answers are terser than olmo2's but correctly grounded and cited, and the
+journey endpoint produced three ordered steps, each citing the source document.
+
+**Threshold validated, not assumed.** An off-topic reply in testing carried a citation,
+which looked like a grounding bug. It was not — the stub had `SIMILARITY_THRESHOLD` at
+0.3. Measured properly: on-topic best similarity **0.773** (5 of 5 chunks pass 0.5),
+off-topic best **0.302** (0 pass). The 0.5 default sits in the gap and the guard fires
+correctly. Recorded in the README so nobody "tunes" it downward without knowing the cost.
+
 ## What is LEFT
 
 ### Human-only setup, before the assistant can answer anything
@@ -217,7 +271,7 @@ Short version: `npm run dev` for the web app; `uvicorn app.main:app --port 8000`
 ### Tests
 
 ```bash
-npm test                                      # 111 passed, 22 files
+npm test                                      # 113 passed, 22 files
 cd rag-service && .venv/Scripts/python.exe -m pytest -q   # 34 passed, 1 skipped
 ```
 

@@ -106,6 +106,32 @@ directory, so run uvicorn *from* `rag-service/` and it picks up the right file.
 Optional Python tuning, with defaults: `EMBEDDING_MODEL` (`nomic-embed-text`),
 `GENERATION_MODEL` (`llama3.1:8b`), `RETRIEVAL_K` (`6`), `SIMILARITY_THRESHOLD` (`0.5`).
 
+`GENERATION_MODEL` can point at **any** chat model you already have pulled — the code
+asks Ollama for JSON-formatted output and does not depend on a specific checkpoint.
+`EMBEDDING_MODEL` is not interchangeable: it must be a real embedding model, and the
+schema's vector column is sized for `nomic-embed-text`'s 768 dimensions, so changing it
+needs a migration.
+
+### Pick the model for your hardware, not the other way round
+
+This matters more than it looks. Check where Ollama actually puts the model:
+
+```bash
+ollama ps        # the PROCESSOR column says 100% CPU or 100% GPU
+```
+
+A 7B–8B model needs roughly 6–8 GB of VRAM. On an integrated GPU (Intel Iris Xe and
+similar have about 1 GB) it will not fit, and Ollama silently falls back to **100% CPU**
+— correct answers, but measured here at **187 seconds each**. A 3B model on the same
+machine is several times faster, and that is the difference between a usable assistant
+and one that looks broken.
+
+If `ollama ps` says `100% CPU`, use a 3B model. If it says `100% GPU`, an 8B is fine.
+
+`RAG_SERVICE_TIMEOUT_MS` (root `.env`, default `120000`) is how long the Next.js app
+waits before giving up. It is deliberately generous because the model is local. On a
+machine with a real GPU you can safely cut it to `30000`.
+
 ### 3. Database
 
 In the Supabase dashboard → **SQL Editor** → **New query**, run the files in order:
@@ -258,6 +284,18 @@ Three guards, in order of how much they matter:
    find. A hallucinated citation never reaches the UI.
 3. **An empty journey is never saved.** If the service returns no steps, the route hands
    back the note and persists nothing, so a learner is never left with a blank board.
+
+Guard 1 rests entirely on `SIMILARITY_THRESHOLD`, so the default is not arbitrary.
+Measured against a phonics document with `nomic-embed-text`:
+
+| Question | Best cosine similarity | Chunks passing 0.5 |
+|---|---|---|
+| "How should I start phonological awareness work?" | **0.773** | 5 of 5 |
+| "What is the capital of Argentina?" | **0.302** | **0** |
+
+The default of `0.5` sits in the gap. Lower it much and off-topic questions start
+retrieving marginal chunks, which is enough for the model to answer from — dropping it
+to `0.3` in testing was enough to make an off-topic reply carry a citation.
 
 The failure mode this leaves is an unhelpful answer, not a confident wrong one. That is
 the right way round for a tool used on children.
@@ -447,6 +485,13 @@ the UI also surfaces as an error.
 **The assistant says it has no source material.** The corpus is empty, or nothing
 cleared the similarity threshold. Ingest a document with `scripts/ingest_file.py`, or
 lower `SIMILARITY_THRESHOLD`.
+
+**"The learning assistant took too long to answer."** The service is running and the
+model is working — it is just slower than the timeout. Run `ollama ps`: if the processor
+column reads `100% CPU`, the model does not fit in your GPU and you want a smaller
+`GENERATION_MODEL` (see above). Raising `RAG_SERVICE_TIMEOUT_MS` will stop the error but
+will not make the wait bearable. Note this is a *different* message from the offline one
+— if you see "assistant is offline" instead, the service genuinely is not reachable.
 
 **"Run a writing screening first."** The journey is built from a derived profile, and
 there is no screening on this account yet. Run one at `/`.
