@@ -219,12 +219,49 @@ lib/
     persist.js                 storage helper
   supabase/                    browser + server Supabase clients
 
+tests/
+  README.md                    test plan → test traceability, and the gaps
+  unit/                        one thing under test, its collaborators mocked
+  integration/                 real collaborators, only the boundary doubled
+  support/                     shared doubles (Supabase, vision model, redirect)
+
 middleware.js                  session refresh + auth redirects
 scripts/warm-nlp.mjs           model warm-up and smoke test
+vitest.config.mjs              test runner configuration
 supabase/*.sql                 database schema
 docs/NLP_ARCHITECTURE.md       full PS4 write-up
 docs/PROJECT_BRIEF.md          course handout + problem statements
 ```
+
+---
+
+## Tests
+
+```bash
+npm test                 # unit + integrated (Vitest)
+npm run test:unit
+npm run test:integration
+npm run test:watch
+```
+
+One test per case in the team's test plan: sign-up and email confirmation, login
+and authentication, the screening route, and three of the four integrated
+sequences. Nothing reaches the network and no API key is needed — the vision model
+and the Supabase service are doubled at the boundary — so the suite runs in about a
+second.
+
+The learning-material use cases live with the code they test, in the RAG service:
+
+```bash
+cd rag-service
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # once
+.venv/bin/python -m pytest -q
+```
+
+**[`tests/README.md`](tests/README.md)** maps every case in the team's test plan to
+the test that covers it, states which rows have no implementation behind them yet
+(a mobile number on sign-up, downloading a material file, a `studentRef` on a
+screening), and lists what the suite deliberately does not cover.
 
 ---
 
@@ -265,6 +302,8 @@ Stated plainly because they matter for interpreting output:
 ## Still to do
 
 - Dashboard aggregating error trends across samples per learner (PS4 deliverable)
-- Unit + integration tests (Jest), E2E (Cypress), and a fuzzer (`fast-check`)
+- Tests for the error pattern analyser — `lib/nlp/*` and `/api/analyze-text` have
+  none yet, and no row of the test plan covers them
+- E2E (Cypress) and a fuzzer (`fast-check`)
 - PS3 — Adaptive Learning Activity Generator, fed by the profile this subsystem produces
 - PDF export of a report for referral to an assessor
