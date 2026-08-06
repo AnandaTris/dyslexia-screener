@@ -109,8 +109,21 @@ export function createFakeSupabase({
   requireEmailConfirmation = true,
   currentUser = null,
   insertError = null,
+  // A screening now has to name a student, so the double seeds one owned by
+  // whoever is signed in. Pass `students: []` to exercise the unknown-student
+  // path.
+  students = currentUser
+    ? [
+        {
+          id: "student-1",
+          therapist_id: currentUser.id,
+          display_name: "Test Student",
+          birth_year: null,
+        },
+      ]
+    : [],
 } = {}) {
-  const tables = {};
+  const tables = { students: [...students] };
   const inserts = [];
   const upserts = [];
   const signedOut = [];
@@ -212,15 +225,44 @@ export function createFakeSupabase({
       },
     },
 
+    // Writes are recorded; reads are answered from the seeded table. The read
+    // half exists because the screening route now resolves a student before it
+    // will spend a Gemini call, so the route cannot run without it.
     from(table) {
-      return {
+      const filters = [];
+      const builder = {
         insert(row) {
           return Promise.resolve(recordInsert(table, row));
         },
         upsert(row) {
           return Promise.resolve(recordUpsert(table, row));
         },
+        select() {
+          return builder;
+        },
+        eq(column, value) {
+          filters.push([column, value]);
+          return builder;
+        },
+        order() {
+          return builder;
+        },
+        limit() {
+          return builder;
+        },
+        matches() {
+          return (tables[table] ?? []).filter((row) =>
+            filters.every(([column, value]) => row[column] === value)
+          );
+        },
+        maybeSingle() {
+          return Promise.resolve({ data: builder.matches()[0] ?? null, error: null });
+        },
+        then(onOk, onErr) {
+          return Promise.resolve({ data: builder.matches(), error: null }).then(onOk, onErr);
+        },
       };
+      return builder;
     },
   };
 }

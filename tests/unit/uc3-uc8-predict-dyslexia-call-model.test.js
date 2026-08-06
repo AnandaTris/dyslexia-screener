@@ -95,3 +95,66 @@ describe("UC3 + UC8 — Predict Dyslexia", () => {
     expect(mocks.model.value.calls).toHaveLength(0);
   });
 });
+
+// A screening belongs to a student, not to the therapist's account. These cover
+// the boundary that makes that true.
+describe("Screening is filed against a student", () => {
+  it("400s when no student is named, before spending model quota", async () => {
+    const response = await POST(
+      screeningRequest({ file: writingSampleFile(), studentId: null })
+    );
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/pick a student/i);
+    expect(mocks.model.value.calls).toHaveLength(0);
+  });
+
+  it("404s for a student the therapist does not own, before spending model quota", async () => {
+    mocks.client.value = createFakeSupabase({ currentUser: SIGNED_IN, students: [] });
+
+    const response = await POST(
+      screeningRequest({ file: writingSampleFile(), studentId: "someone-elses-student" })
+    );
+
+    expect(response.status).toBe(404);
+    expect(mocks.model.value.calls).toHaveLength(0);
+  });
+
+  it("stores the screening and the derived profile against that student", async () => {
+    const response = await POST(
+      screeningRequest({ file: writingSampleFile(), writerAge: 9 })
+    );
+    expect(response.status).toBe(200);
+
+    const screening = mocks.client.value.inserts.find((w) => w.table === "screenings");
+    expect(screening.row.student_id).toBe("student-1");
+    expect(screening.row.user_id).toBe(SIGNED_IN.id);
+
+    // The profile is keyed on the student. Before per-student records this
+    // upsert conflicted on user_id, which is exactly why screening a second
+    // student overwrote the first one's profile.
+    const profile = mocks.client.value.upserts.find((w) => w.table === "learner_profiles");
+    expect(profile.row.student_id).toBe("student-1");
+  });
+
+  it("falls back to the student's year of birth when no age is typed", async () => {
+    mocks.client.value = createFakeSupabase({
+      currentUser: SIGNED_IN,
+      students: [
+        {
+          id: "student-1",
+          therapist_id: SIGNED_IN.id,
+          display_name: "Young Writer",
+          birth_year: new Date().getFullYear() - 6,
+        },
+      ],
+    });
+
+    await POST(screeningRequest({ file: writingSampleFile() }));
+
+    // The age reaches the prompt, so the reversal guard fires without anyone
+    // remembering to fill the field in.
+    const [, textPart] = mocks.model.value.calls[0].contents[0].parts;
+    expect(textPart.text).toMatch(/The writer is 6 years old/);
+  });
+});

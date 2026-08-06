@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { decideVerdict } from "../../../lib/screening/verdict";
 import { createClient } from "../../../lib/supabase/server";
 import { deriveProfile } from "../../../lib/profile";
+import { loadStudent, ageFromBirthYear } from "../../../lib/students";
 
 // This route is the screening path only: image in, verdict out. The error
 // pattern analyser lives on /api/analyze-text so that loading its grammar
@@ -132,9 +133,30 @@ export async function POST(req) {
       );
     }
 
+    // A screening now belongs to a student. Resolving it here — before any
+    // Gemini call — means a bad student id costs nothing rather than a paid
+    // request. loadStudent scopes by therapist, so another therapist's id comes
+    // back null and is answered 404.
+    const studentId = form.get("student_id");
+    if (!studentId || typeof studentId !== "string") {
+      return NextResponse.json(
+        { error: "Pick a student before screening." },
+        { status: 400 },
+      );
+    }
+    const student = await loadStudent(supabase, user.id, studentId);
+    if (!student) {
+      return NextResponse.json({ error: "That student was not found." }, { status: 404 });
+    }
+
+    // An explicitly typed age wins; otherwise fall back to the student's year of
+    // birth, so the reversal guard fires without depending on someone
+    // remembering to fill the field in.
     const rawAge = Number(form.get("writerAge"));
     const writerAge =
-      Number.isFinite(rawAge) && rawAge > 0 && rawAge < 120 ? Math.round(rawAge) : null;
+      Number.isFinite(rawAge) && rawAge > 0 && rawAge < 120
+        ? Math.round(rawAge)
+        : ageFromBirthYear(student.birth_year);
 
     const fileBase64 = Buffer.from(await upload.arrayBuffer()).toString("base64");
 
@@ -216,6 +238,7 @@ export async function POST(req) {
     // to tune the threshold.
     const { error: dbError } = await supabase.from("screenings").insert({
       user_id: user.id,
+      student_id: student.id,
       is_writing_sample: parsed.isWritingSample ?? null,
       verdict: decision.verdict,
       likelihood_score: decision.score,
@@ -238,10 +261,15 @@ export async function POST(req) {
           .upsert(
             {
               user_id: user.id,
+              student_id: student.id,
               profile,
               updated_at: new Date().toISOString(),
             },
-            { onConflict: "user_id" }
+            // student_id is the primary key now. Leaving this as user_id would
+            // fail outright — that constraint no longer exists — and was the
+            // reason a second screening used to overwrite the first student's
+            // profile.
+            { onConflict: "student_id" }
           );
         if (profileError) {
           console.error("Failed to save learner profile:", profileError.message);
