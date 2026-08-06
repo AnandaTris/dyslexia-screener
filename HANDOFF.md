@@ -1,48 +1,126 @@
 # Project Handoff — Dyslexia Screener + RAG Learning Assistant
 
-**Last updated:** 2026-08-03 (session 6 — chat mode routing, paused on a measured gate failure)
-**Branch:** `jer`. Last commit `8eaca47`. Uncommitted: the docs restructure, a
-`lib/ragService.js` message fix, the untracked test/script files listed below, and
-the chat-mode-routing work described under *Done this session*.
+**Last updated:** 2026-08-06 (session 7 — corpus seeded, RAG working end to end)
+**Branch:** `jer`. Last commit before this session: `0687146`. Session 6's work was all
+committed in `0687146` despite that commit's message ("docs: architecture update") — the
+previous handoff's "uncommitted" list was stale.
 
 ---
 
-## Read this first (session 6)
+## Read this first (session 7)
 
-Two things from session 5 are now **out of date**, both verified this session:
+**The RAG pipeline now works end to end.** The corpus is no longer empty: four
+taxonomy-derived documents (5 chunks) are ingested, grounded chat returns real answers
+with citations, and `/journey` builds an 8-step cited plan. The session-6 headline action
+is done.
 
-1. **The RAG schema IS applied.** `scripts/check_schema.py` prints
-   `Schema is fully applied.` — all six tables plus `match_document_chunks` exist.
-   The session-5 headline blocker is cleared.
-2. **The corpus is empty.** `documents` and `document_chunks` both report **0 rows**.
-   This is why every grounded question answers `NO_MATERIAL_MESSAGE`: `answer_question()`
-   returns it without calling the model when retrieval is empty
-   (`rag-service/app/generation.py:82-83`). Nothing is broken — there is nothing to
-   retrieve. **Ingesting a document is the single highest-value next action.**
+**The one new problem is latency, and it is measured, not suspected:**
+
+- Grounded `/chat` takes **~76 s** per answer. Under the 120 s timeout, so it works.
+- `/journey` took **121.8 s** — **over** the 120 s `DEFAULT_TIMEOUT_MS` in
+  `lib/ragService.js:13`. In the browser, "Build my journey" will show the timeout
+  message even though the service answered correctly.
+
+The session-6 figure of "3.89 / 4.71 / 5.32 s" was the **plain** path, which sends no
+excerpts. Grounded mode feeds ~6,600 chars of retrieved context into a 3B model on CPU,
+and that is where the time goes. **Fix: set `RAG_SERVICE_TIMEOUT_MS=300000` in the root
+`.env`** (documented at `WORKFLOW.md:48`). Not done here — the root `.env` holds secrets
+and was left alone.
 
 ---
 
 ## Current state
 
-Everything except the RAG database half is verified working. Each row below was run in
-this session; the result is what the command actually printed.
+Every row below was run in this session; the result is what the command actually printed.
 
 | Component | Command | Result |
 |---|---|---|
-| JS test suite | `npm test` | **186 passed, 29 files** (~13 s) |
-| Python test suite | `.venv/Scripts/python.exe -m pytest -q` | **34 passed, 1 skipped** |
-| Ollama server | `GET http://127.0.0.1:11434/api/tags` | **HTTP 200**, two processes live |
-| Ollama models | `ollama list` | `llama3.2:3b` (2.0 GB), `nomic-embed-text:latest` (274 MB), `olmo2:latest` (4.5 GB) |
-| Embedding width | `client.embeddings(...)` on `nomic-embed-text` | **768 dims — matches `vector(768)`** |
-| Supabase project | `socket.getaddrinfo` on the project host | **resolves** |
-| `screenings` (PS1) | `check_schema.py` probe | **OK, 14 rows** |
-| `error_analyses` (PS4) | `check_schema.py` probe | **OK, 4 rows** |
-| The six RAG tables | `scripts/check_schema.py` | **all MISSING** |
-| `match_document_chunks` | `scripts/check_schema.py` | **MISSING** |
+| JS test suite | `npx vitest run --exclude "**/e2e-live.test.js"` | **190 passed, 29 files** (9.4 s) |
+| Python test suite | `.venv/Scripts/python.exe -m pytest -q` | **52 passed, 1 skipped** (0.45 s) |
+| Ollama server | `GET http://127.0.0.1:11434/api/tags` | **HTTP 200** |
+| RAG service | `GET http://127.0.0.1:8000/health` | **`{"status":"ok"}`** |
+| Schema | `scripts/check_schema.py` | **fully applied**, all six tables + RPC |
+| `documents` | `scripts/check_schema.py` | **4 rows** |
+| `document_chunks` | `scripts/check_schema.py` | **5 rows** |
+| `learner_profiles` | direct select | **1 row**, `primary_label: surface` |
+| Grounded chat | `POST /chat` ×2 | **answers with citations**, 75.5 s / 75.9 s |
+| Journey | `POST /journey` (surface) | **8 steps, every one cited**, 121.8 s |
 
-So: web app, auth, screener, analyser, NLP pipeline, Ollama and both test suites are
-good. The only broken path is RAG retrieval, and the cause is in the database, not the
-code.
+Both suites, the web app, auth, screener, analyser, NLP pipeline, Ollama, retrieval and
+generation are all verified working. Nothing is known-broken; the open issue is speed.
+
+---
+
+## Done this session (session 7)
+
+Seeded the RAG corpus. Design spec:
+`docs/superpowers/specs/2026-08-06-rag-corpus-seed-design.md` (gitignored, working tree
+only).
+
+- **Rejected the three DAS PDFs as corpus material.** `docs/*.pdf` are hackathon problem
+  statements — developer-facing briefs naming industry mentors. Ingesting them would have
+  made a learner asking "what does letter reversal mean?" get an answer citing *DAS DIAL
+  Problem Statement 4*.
+- **Authored four documents in `rag-service/corpus/`**, every claim derived from
+  `lib/nlp/taxonomy.js` and `lib/profile.js` rather than from outside knowledge, written
+  in second-person plain English to match the existing UI voice.
+
+| File | `target_profiles` | Chunks |
+|---|---|---|
+| `understanding-your-results.txt` | `{}` — every learner | 2 |
+| `phonological-pattern.txt` | `{phonological}` | 1 |
+| `surface-pattern.txt` | `{surface}` | 1 |
+| `visual-spatial-pattern.txt` | `{visual_spatial}` | 1 |
+
+### Measured this session
+
+| What | Command | Result |
+|---|---|---|
+| Chunk dry run | `chunk_text` over `corpus/*.txt` | **5 chunks** (estimate had been 9-11) |
+| Ingest | `ingest_file.py` ×4 | 2 + 1 + 1 + 1 = **5 chunks**, matches the dry run |
+| Retrieval, on-topic | "sounds right but looks wrong" + `['surface']` | **3/3 pass**, top **0.729** |
+| Retrieval, cross-profile | "letter reversal?" + `['surface']` | **3/3 pass**, top **0.541** (the untagged doc) |
+| Retrieval, journey query | "learning activities for surface…" | **1/3 pass**, top **0.567** |
+| Retrieval, off-topic | "write me a python quicksort" + `['surface']` | **0/3 pass**, top **0.469** |
+| Retrieval, off-topic | "what is the capital of France?" | **0/5 pass**, top **0.328** |
+| Grounded `/chat` | live, ×2 | answers **with citations**, **75.5 s / 75.9 s** |
+| `/journey` | live, surface profile | **8 steps, all cited**, **121.8 s** |
+
+### What the measurements settled
+
+- **The profile filter works as designed.** `['surface']` admits 3 chunks (the surface doc
+  plus the 2 untagged ones); an unfiltered query sees all 5. The
+  `cardinality(target_profiles) = 0` branch is what keeps general material reachable for
+  everyone, and it is doing real work — the "letter reversal" answer for a surface learner
+  comes from the untagged doc.
+- **`SIMILARITY_THRESHOLD = 0.5` still holds after seeding.** Both off-topic probes score
+  below it. But the quicksort probe reached **0.469** — only 0.031 of headroom. Worth
+  re-checking if the corpus grows.
+- **Grounded latency is context-bound, not model-bound.** Same model, same machine: plain
+  ~4-5 s (session 6), grounded ~76 s with ~6,600 chars of excerpts.
+
+### Deliberately not fixed: two profile-vocabulary mismatches
+
+Found while designing the tagging, flagged rather than changed:
+
+- `taxonomy.js:133` names the profile **`visual`**; `profile.js:21` emits
+  **`visual_spatial`**. Documents are tagged to match reality (`visual_spatial`), since
+  `main.py:88` filters on `primary_label`. A doc tagged `visual` would never match anyone.
+- `transposition` maps to `visual` in `taxonomy.js:65` but to `phonological` in
+  `profile.js:6`.
+- **`morphological` is unreachable.** It is a profile in `taxonomy.js:126`, but
+  `deriveProfile` can only ever return `phonological`, `surface` or `visual_spatial`. So
+  morphology content lives in the **untagged** document, which is the only way it can be
+  retrieved at all.
+
+Changing either mapping alters screening behaviour and would orphan the one stored
+`learner_profiles` row. Separate decision.
+
+### Re-ingestion hazard
+
+`Db.insert_document` (`app/db.py:9-22`) is a plain insert — no upsert, no dedup key.
+**Running an ingest twice silently doubles that document** and skews retrieval toward it.
+To revise a corpus file, delete its `documents` row first; `document_chunks` cascades.
 
 ---
 
@@ -168,42 +246,26 @@ No commits yet — everything below is in the working tree.
 
 ## In progress / next steps
 
-1. ~~**Apply the RAG schema.**~~ **Done** — `check_schema.py` reports
-   `Schema is fully applied.` as of session 6.
-2. **Ingest at least one document.** This is now the highest-value action in the project:
-   the corpus is empty, so Grounded mode answers every question with
-   `NO_MATERIAL_MESSAGE` and `/journey` has nothing to plan from. Normal mode works
-   regardless, but it is ungrounded by design.
-   ```bash
-   cd rag-service
-   .venv/Scripts/python.exe scripts/ingest_file.py path/to/guide.pdf \
-       --title "Phonics Guide" --doc-type guide --profiles phonological
+1. ~~**Apply the RAG schema.**~~ **Done** (session 6).
+2. ~~**Ingest at least one document.**~~ **Done** (session 7) — 4 documents, 5 chunks,
+   verified by live `/chat` and `/journey` calls.
+3. **Raise the client timeout.** The exact next action. `/journey` measured **121.8 s**
+   against a **120 s** default, so the browser will report a timeout on a request that
+   actually succeeded. In the root `.env`:
    ```
-   `docs/` already holds three DAS problem-statement PDFs that could seed the corpus.
-3. **Try the mode dropdown in the browser** — `/dashboard` → "Answer mode" →
-   *Normal — general knowledge*. Verified at the API layer this session but **not** in a
-   signed-in browser.
-4. **Re-run `npm test` and commit.** Suggested split:
-   ```bash
-   git add lib/nlp/align.test.js lib/nlp/g2p.test.js lib/nlp/morphology.test.js \
-           lib/nlp/phonemes.test.js lib/nlp/taxonomy.test.js \
-           lib/screening/handoff.test.js middleware.test.js
-   git commit -m "test: cover the remaining NLP stages, screening handoff and middleware"
-
-   git add rag-service/scripts/check_schema.py .gitignore
-   git commit -m "chore(rag): add a schema checker and ignore decorated .env variants"
-
-   git add README.md WORKFLOW.md RAG_ORCHESTRATION.md HANDOFF.md \
-           rag-service/README.md lib/ragService.js
-   git commit -m "docs: split into README, WORKFLOW and RAG_ORCHESTRATION"
-
-   git add rag-service/app/plain.py rag-service/app/main.py rag-service/app/schemas.py \
-           rag-service/tests/test_plain.py rag-service/tests/test_endpoints.py \
-           app/api/chat/route.js app/api/chat/route.test.js app/dashboard/ChatAssistant.jsx \
-           app/dashboard/page.jsx app/globals.css lib/chat.js supabase/rag_schema.sql
-   git commit -m "feat(chat): add a Normal answering mode behind a two-call topic gate"
+   RAG_SERVICE_TIMEOUT_MS=300000
    ```
-   Pushing stays yours — `git push` has been denied in previous sessions.
+   Not done here because the root `.env` holds secrets. `WORKFLOW.md:48` documents the
+   variable.
+4. **Try it in a signed-in browser.** Everything so far is verified at the API layer only.
+   `/dashboard` → ask a question in Grounded mode → expect an answer with a `Sources:`
+   line. Then `/journey` → "Build my journey" → expect the 8 cited steps. Both need
+   Ollama and the RAG service running, and step 3 done first or the journey will appear
+   to fail.
+5. **Decide whether ~76 s per grounded answer is acceptable.** It is under the timeout but
+   it is a long wait with no streaming. Options, none of them attempted: stream tokens,
+   cut `RETRIEVAL_K` to shrink the prompt, or accept it as the cost of local inference on
+   this hardware.
 
 ### Open design question, parked
 
@@ -241,13 +303,18 @@ referral itself. Undecided:
 
 ## Blockers
 
-**None hard.** The session-5 blocker (`rag_schema.sql` unapplied) is cleared — verified
-this session.
+**None hard.** Both earlier blockers are cleared: `rag_schema.sql` was applied (session 6)
+and the corpus is seeded (session 7), each verified by running the check.
 
-Two soft ones:
+Three soft ones:
 
-- **The corpus is empty**, so Grounded mode and `/journey` have nothing to work with. Not
-  a defect; step 2 of *Next steps* fixes it.
+- **`/journey` exceeds the client timeout.** Measured 121.8 s against a 120 s default, so
+  the browser reports a timeout on a request that succeeded. One env line fixes it —
+  step 3 of *Next steps*. This is the only thing standing between the current state and a
+  working browser demo.
+- **Grounded answers take ~76 s.** Real, measured, and not a defect — it is a 3B model
+  doing CPU-only prompt evaluation over ~6,600 chars of retrieved context. Under the
+  timeout once step 3 is done, but a long silent wait.
 - **`chat_messages.mode` is not applied**, by choice, so mode badges do not survive a
   reload. The two-line SQL and the three code changes are written out under *Deliberately
   not done* above.
@@ -260,6 +327,26 @@ DDL. Anything schema-related has to go through the dashboard SQL Editor.
 
 ## Decisions and why
 
+- **The corpus is derived from the project's own taxonomy, not from general knowledge.**
+  Every claim in `rag-service/corpus/` traces to `lib/nlp/taxonomy.js` or `lib/profile.js`.
+  This is educational content about a learning difference, so "I can check it against a
+  file in this repo" beats "the model is probably right", and it keeps the assistant
+  consistent with what the analyser already tells the same user.
+- **The DAS PDFs were rejected as corpus material.** They are hackathon problem statements
+  written for developers. Grounding a learner's answer in them would cite project
+  objectives and mentor names at someone asking what their spelling result means.
+- **Documents are tagged `visual_spatial`, not `visual`.** The tag has to match what
+  `deriveProfile` actually emits, because `main.py:88` filters on `primary_label`. Tagging
+  by `taxonomy.js`'s vocabulary would produce a document no learner could ever retrieve —
+  and it would fail silently, with no error anywhere.
+- **Morphology went in the untagged document.** `morphological` is a profile name the web
+  app can never produce, so a document tagged with it would be dead. Untagged is the only
+  place that content is reachable, because of the `cardinality(target_profiles) = 0`
+  branch.
+- **No `--replace` flag was added to the ingest script.** Re-ingesting duplicates a
+  document, which is a real hazard, but it is a hazard you hit while iterating on content —
+  documenting the delete costs nothing and adding a flag nobody asked for costs a code
+  path to maintain.
 - **The topic gate is two model calls, not one.** Measured, not assumed: one call scored
   5/8 and wrote a working quicksort in a dyslexia assistant; two scored 8/8 live for
   +1.5 s. A model asked to be helpful and to police its own scope in the same breath
@@ -305,6 +392,8 @@ DDL. Anything schema-related has to go through the dashboard SQL Editor.
 - Plan 3 (journey+progress): `docs/superpowers/plans/2026-07-26-journey-progress-tracking.md`
 - Chat mode routing spec: `docs/superpowers/specs/2026-08-03-chat-mode-routing-design.md`
   (its topic-gate section is marked SUPERSEDED — read that part before trusting it)
+- Corpus seed spec: `docs/superpowers/specs/2026-08-06-rag-corpus-seed-design.md`
+- Corpus source files: `rag-service/corpus/*.txt` (version-controlled, re-ingestable)
 - Backend code: `rag-service/`, `supabase/rag_schema.sql`, `rag-service/app/plain.py`
 - Web integration: `lib/profile.js`, `lib/ragService.js`, `lib/journey.js`,
   `app/api/chat/`, `app/api/journey/`, `app/dashboard/`, `app/journey/`
