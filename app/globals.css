@@ -969,17 +969,151 @@ h3 {
 
 .student-list {
   list-style: none;
-  margin: 0 0 24px;
+  margin: 0 0 28px;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
   gap: 16px;
+}
+
+.student-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: 100%;
+  padding: 18px;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: var(--paper);
+  text-decoration: none;
+  color: inherit;
+  transition: transform 200ms var(--ease-out), border-color 200ms var(--ease-out),
+    box-shadow 200ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .student-card:hover {
+    border-color: var(--ink);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(27, 42, 74, 0.08);
+  }
+}
+
+.student-card:active {
+  transform: translateY(0) scale(0.99);
+}
+
+.student-card:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.student-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.student-card h2 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+/* Initials rather than a photo: this app should not be storing a child's face,
+   and a letterform is enough to tell two cards apart at a glance. */
+.student-avatar {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--paper-deep);
+  border: 1px solid var(--card-border);
+  color: var(--ink);
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+}
+
+.student-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.student-meta {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.badge {
+  align-self: flex-start;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.badge-profile {
+  background: #e8f0ea;
+  border-color: #bcd6c6;
+  color: var(--ok-green);
+}
+
+.badge-todo {
+  background: var(--paper-deep);
+  border-color: var(--card-border);
+  color: var(--ink-soft);
+}
+
+.setup-callout {
+  border: 1px solid var(--flag-strong);
+  border-left-width: 4px;
+  background: #fbeae7;
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 24px;
+}
+
+.setup-callout h2 {
+  font-size: 1.05rem;
+  margin-bottom: 6px;
+  color: var(--flag-strong);
+}
+
+.setup-callout code {
+  background: rgba(179, 64, 46, 0.1);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.empty-panel,
+.add-student-panel {
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: var(--paper);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.empty-panel h2,
+.add-student-panel h2 {
+  font-size: 1.05rem;
+  margin-bottom: 8px;
 }
 
 .student-form {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  max-width: 380px;
 }
 
 .screening-list {
@@ -996,6 +1130,88 @@ h3 {
   color: var(--ink-soft);
   margin-left: 8px;
   font-size: 0.85rem;
+}
+
+/* ---- Dashboard: orientation ---- */
+
+.section-heading {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 28px 0 12px;
+}
+
+/* One unambiguous answer to "what now?". Four equal cards make the user choose;
+   this makes the choice for them and leaves the cards as the map. */
+.next-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+  padding: 16px 20px;
+  border: 1px solid var(--ink);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.next-step-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.next-step-text {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 1.2rem;
+  margin: 2px 0 0;
+}
+
+.how-strip {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  counter-reset: how;
+}
+
+.how-strip li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px 16px;
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  background: var(--paper);
+  font-size: 0.88rem;
+}
+
+.how-strip strong {
+  font-size: 0.95rem;
+}
+
+.how-strip span:last-child {
+  color: var(--ink-soft);
+}
+
+.how-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-bottom: 4px;
 }
 
 /* ---- Dashboard hub ---- */

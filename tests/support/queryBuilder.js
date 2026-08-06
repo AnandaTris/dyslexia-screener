@@ -35,6 +35,10 @@ export function fakeSupabase({ user = null, data = {} } = {}) {
         state.filters.push([column, value, "neq"]);
         return api;
       },
+      in: (column, values) => {
+        state.filters.push([column, values, "in"]);
+        return api;
+      },
       order: () => api,
       limit: () => api,
       maybeSingle: () => api,
