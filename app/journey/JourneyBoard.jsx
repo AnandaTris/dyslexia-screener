@@ -5,7 +5,7 @@ import { progressFor } from "../../lib/journey";
 
 const NEXT_STATUS = { not_started: "done", in_progress: "done", done: "not_started" };
 
-export default function JourneyBoard({ initialJourney }) {
+export default function JourneyBoard({ initialJourney, studentId, studentName }) {
   const [journey, setJourney] = useState(initialJourney);
   const [building, setBuilding] = useState(false);
   const [note, setNote] = useState(null);
@@ -19,7 +19,11 @@ export default function JourneyBoard({ initialJourney }) {
     setError(null);
     setNote(null);
     try {
-      const res = await fetch("/api/journey", { method: "POST" });
+      const res = await fetch("/api/journey", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ student_id: studentId }),
+      });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Could not build a journey.");
@@ -73,9 +77,9 @@ export default function JourneyBoard({ initialJourney }) {
     return (
       <div>
         <p className="empty-state">
-          You don&apos;t have a journey yet. Building one uses your screening profile
-          to pick steps from the uploaded resources — every step cites where it
-          came from.
+          {studentName} doesn&apos;t have a journey yet. Building one uses their
+          screening profile to pick steps from the uploaded resources — every step
+          cites where it came from.
         </p>
         {note && <div className="info-box">{note}</div>}
         {error && (
@@ -134,11 +138,11 @@ export default function JourneyBoard({ initialJourney }) {
       </ol>
 
       <button className="btn btn-ghost" onClick={build} disabled={building}>
-        {building ? "Rebuilding…" : "Rebuild from my latest profile"}
+        {building ? "Rebuilding…" : "Rebuild from the latest profile"}
       </button>
       <p className="auth-hint">
-        Rebuilding archives this journey and starts a fresh one. Your old progress
-        is kept, not deleted.
+        Rebuilding archives this journey and starts a fresh one. The old progress is
+        kept, not deleted, and no other student is affected.
       </p>
     </div>
   );
