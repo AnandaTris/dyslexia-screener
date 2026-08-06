@@ -115,8 +115,7 @@ export default async function DashboardPage() {
       <section className="assistant-panel" aria-label="Learning assistant">
         <h2>Learning assistant</h2>
         <p className="assistant-note">
-          Answers are grounded in the uploaded dyslexia resources, with
-          citations. Not a diagnosis.
+          Choose how it answers below. Either way, it is not a diagnosis.
         </p>
         <ChatAssistant initialMessages={messages} />
       </section>

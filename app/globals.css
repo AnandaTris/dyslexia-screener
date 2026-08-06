@@ -1025,6 +1025,42 @@ a.dash-card:focus-visible {
   margin-top: 6px;
 }
 
+/* The badge sits where the Sources line would: an ungrounded answer should be
+   marked in the same place a grounded one is credited, not tucked away. */
+.chat-ungrounded {
+  font-size: 0.8rem;
+  color: var(--flag-strong);
+  margin-top: 6px;
+}
+
+.chat-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.chat-mode label {
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+.chat-mode select {
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.95rem;
+  padding: 7px 10px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.chat-mode select:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 1px;
+}
+
 .chat-input-row {
   display: flex;
   gap: 8px;

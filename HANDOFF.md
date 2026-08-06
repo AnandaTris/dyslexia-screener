@@ -1,290 +1,311 @@
 # Project Handoff — Dyslexia Screener + RAG Learning Assistant
 
-**Last updated:** 2026-07-31 (session 3 — consolidation)
-**Branch:** `jer`, 8 commits ahead of `origin/jer`.
-
-`origin/master` is merged in as `0224607`, so `jer` now holds the screener, the error
-analyser, the RAG learning assistant **and** the full test plan suite in one place.
-
----
-
-## TL;DR
-
-- **The branch is consolidated.** `jer` = everything on `master` + the RAG work.
-- **`npm test` — 113 passed, 22 files.** `npm run build` — clean.
-  `rag-service` pytest — **34 passed, 1 skipped** (the skip is the download feature
-  that does not exist; see `tests/README.md` note 5).
-- **All of Plan 3 plus this session's refinements are uncommitted.** Commit block below.
-- **To actually RUN the assistant end-to-end you still need the human-only setup**
-  (Ollama + `rag_schema.sql` + `rag-service/.env`) — see the README.
+**Last updated:** 2026-08-03 (session 6 — chat mode routing, paused on a measured gate failure)
+**Branch:** `jer`. Last commit `8eaca47`. Uncommitted: the docs restructure, a
+`lib/ragService.js` message fix, the untracked test/script files listed below, and
+the chat-mode-routing work described under *Done this session*.
 
 ---
 
-## Commits are yours to make
+## Read this first (session 6)
 
-`~/.claude/settings.json` denies `Bash(git commit:*)` and `Bash(git push:*)`. A deny
-rule cannot be overridden by an allow rule or by approving a prompt, and it must **not**
-be routed around by switching to PowerShell — an earlier session did that by mistake.
+Two things from session 5 are now **out of date**, both verified this session:
 
-Nothing in this session committed anything. You created the merge commit `0224607`
-yourself. The block below is the rest.
+1. **The RAG schema IS applied.** `scripts/check_schema.py` prints
+   `Schema is fully applied.` — all six tables plus `match_document_chunks` exist.
+   The session-5 headline blocker is cleared.
+2. **The corpus is empty.** `documents` and `document_chunks` both report **0 rows**.
+   This is why every grounded question answers `NO_MATERIAL_MESSAGE`: `answer_question()`
+   returns it without calling the model when retrieval is empty
+   (`rag-service/app/generation.py:82-83`). Nothing is broken — there is nothing to
+   retrieve. **Ingesting a document is the single highest-value next action.**
 
-### Commit block
+---
 
-```bash
-# 1. Reconcile master's test plan suite with the dashboard redirect
-git add app/login/actions.test.js tests/integration/it2-login.test.js \
-        tests/unit/uc1-uc6-signup-verify-email.test.js \
-        tests/unit/uc2-uc7-login-authentication.test.js
-git commit -m "test: point the login redirect assertions at /dashboard"
+## Current state
 
-# 2. Shared journey helpers and the query-builder test double
-git add lib/journey.js lib/journey.test.js tests/support/queryBuilder.js
-git commit -m "feat(web): add journey read + progress helpers and a query-builder double"
+Everything except the RAG database half is verified working. Each row below was run in
+this session; the result is what the command actually printed.
 
-# 3. The journey API
-git add app/api/journey/
-git commit -m "feat(web): add /api/journey build, read and step-status routes"
+| Component | Command | Result |
+|---|---|---|
+| JS test suite | `npm test` | **186 passed, 29 files** (~13 s) |
+| Python test suite | `.venv/Scripts/python.exe -m pytest -q` | **34 passed, 1 skipped** |
+| Ollama server | `GET http://127.0.0.1:11434/api/tags` | **HTTP 200**, two processes live |
+| Ollama models | `ollama list` | `llama3.2:3b` (2.0 GB), `nomic-embed-text:latest` (274 MB), `olmo2:latest` (4.5 GB) |
+| Embedding width | `client.embeddings(...)` on `nomic-embed-text` | **768 dims — matches `vector(768)`** |
+| Supabase project | `socket.getaddrinfo` on the project host | **resolves** |
+| `screenings` (PS1) | `check_schema.py` probe | **OK, 14 rows** |
+| `error_analyses` (PS4) | `check_schema.py` probe | **OK, 4 rows** |
+| The six RAG tables | `scripts/check_schema.py` | **all MISSING** |
+| `match_document_chunks` | `scripts/check_schema.py` | **MISSING** |
 
-# 4. The journey page
-git add app/journey/
-git commit -m "feat(web): add /journey page with journey board and step tracking"
+So: web app, auth, screener, analyser, NLP pipeline, Ollama and both test suites are
+good. The only broken path is RAG retrieval, and the cause is in the database, not the
+code.
 
-# 5. Shared chat-history read, and the malformed-body guard
-git add lib/chat.js lib/chat.test.js app/api/chat/route.js
-git commit -m "feat(web): share the chat history read and answer 400 on a bad body"
+---
 
-# 6. The dashboard hub: progress card, analyser card, restored chat log
-git add app/dashboard/ app/globals.css
-git commit -m "feat(web): complete the dashboard hub and restore the chat log"
+## Done this session (session 6)
 
-# 7. Reach the hub from the other pages
-git add app/page.jsx app/analysis/page.jsx
-git commit -m "feat(web): link the screener and analyser back to the dashboard"
+Chat mode routing, implementing `docs/superpowers/specs/2026-08-03-chat-mode-routing-design.md`.
+All code is written and both unit suites pass, but **the feature is not signed off** — see
+the measured gate failure below.
 
-# 7b. Tell a slow model apart from a dead service
-git add lib/ragService.js lib/ragService.test.js
-git commit -m "fix(web): report a RAG timeout as a timeout, not as an offline service"
+- **`rag-service/app/plain.py`** — new. `PLAIN_SYSTEM`, `OFF_TOPIC_MESSAGE`,
+  `answer_plain()`. Fails closed on anything that is not literally `on_topic: True`.
+- **`schemas.py`** — `ChatRequest.mode: Literal["grounded","plain"] = "grounded"`.
+- **`main.py`** — `chat()` branches on mode; the plain branch never touches embedder or db.
+- **`app/api/chat/route.js`** — validates `mode`, normalises the unknown to `grounded`,
+  passes it through, stores it on both rows, returns it.
+- **`lib/chat.js`** — selects `mode` so badges survive a reload.
+- **`supabase/rag_schema.sql`** — `chat_messages.mode` column, plus an
+  `alter table ... add column if not exists` because the table already exists.
+  **Not yet run against the live project.**
+- **`ChatAssistant.jsx` + `globals.css`** — the "Answer mode" dropdown
+  (Grounded / Normal) and the ungrounded badge.
+- **Tests** — new `rag-service/tests/test_plain.py`, 3 cases in `test_endpoints.py`,
+  4 in `app/api/chat/route.test.js`.
 
-# 8. Repo hygiene
-git add .gitignore
-git commit -m "chore: ignore editor dirs, build scratch and any stray .env"
+### Measured this session
 
-# 9. Docs
-git add README.md tests/README.md HANDOFF.md
-git commit -m "docs: cover the RAG assistant in the README and refresh the test matrix"
+| What | Command | Result |
+|---|---|---|
+| Python suite | `.venv/Scripts/python.exe -m pytest -q` | **52 passed, 1 skipped** (was 34) |
+| JS suite | `npx vitest run --exclude "**/e2e-live.test.js"` | **190 passed, 29 files** (was 186) |
+| JS suite incl. live harness | `npm test` | 2 failures, both in the untracked `e2e-live.test.js` — see *Undiagnosed* |
+| Schema | `scripts/check_schema.py` | **fully applied**, corpus 0 rows |
+| Plain mode, live | `POST /chat {"mode":"plain"}` | **answered** "what does letter reversal mean?" with `citations: []` |
+| Bad mode, live | `POST /chat {"mode":"nonsense"}` | **422** |
+| No mode, live | `POST /chat` | **grounded** → `NO_MATERIAL_MESSAGE` (corpus empty) |
+| Topic gate, one call | 8-question probe vs `llama3.2:3b` | **5/8** — answered "write me a python quicksort" in full |
+| Topic gate, dedicated classify call | same 8 questions, isolated | **7/8** — only "capital of France?" leaked |
+| **Topic gate, two calls, live `POST /chat`** | same 8 questions | **8/8** — 4 refused, 4 answered |
+| Classify call latency | 3 warm runs | **1.39 / 1.52 / 1.70 s** (min/mean/max) |
+| Answer call latency | 3 warm runs | **3.89 / 4.71 / 5.32 s** (min/mean/max) |
+
+### The design that changed mid-build
+
+**The spec's one-call topic gate does not work on `llama3.2:3b`.** It assumed the model
+would honestly report `on_topic` while also answering. Measured, it does not: asked to
+`write me a python quicksort` in plain mode it set `on_topic: true` and returned a working
+quicksort. The Python `is not True` check was sound — it simply never fired, because the
+model never said false.
+
+Resolved by splitting the two jobs across two calls (`is_on_topic()` then the answering
+call), which the user approved after seeing the measurements. `"When in doubt, answer
+false"` in the classifier prompt closed the last leak. `docs/superpowers/specs/2026-08-03-chat-mode-routing-design.md`
+now carries a SUPERSEDED marker on that section with the numbers.
+
+### Deliberately not done: `chat_messages.mode`
+
+The user chose to skip the SQL for now, so `mode` is **not** written or read at the
+database boundary. This is load-bearing: PostgREST fails an insert or select naming a
+column it does not know, so writing `mode` against the unaltered table would have killed
+the *entire* transcript to gain a badge. Both `app/api/chat/route.js` and `lib/chat.js`
+carry a comment saying exactly what to re-add, and `route.test.js` has a test asserting
+the omission so it cannot regress silently.
+
+Badges work within a session; they disappear on reload. To finish it, run against the
+project:
+
+```sql
+alter table public.chat_messages
+  add column if not exists mode text not null default 'grounded';
+alter table public.chat_messages
+  add constraint chat_messages_mode_check check (mode in ('grounded','plain'));
 ```
 
----
+then put `mode` back into the insert in `app/api/chat/route.js`, into the select in
+`lib/chat.js`, and delete the "does not write mode until the column exists" test.
 
-## What this session did
+### Undiagnosed
 
-### 1. Merged `origin/master` into `jer`
-
-File-level conflict-free — `f8b83dc` and master's seven commits touched disjoint paths.
-The real integration work was **semantic**: `f8b83dc` moved the post-login redirect from
-`/` to `/dashboard`, and master's suite still asserted `/` in four places. The app was
-right and the tests were stale, so the tests moved.
-
-### 2. Reviewed the code that had never been reviewed
-
-Plan 2 Task 4 (`app/api/chat/route.js`) and all of Plan 3. Three defects found and fixed:
-
-- **`POST /api/journey` returned unsaved step rows.** It responded with the objects it
-  had just built, not the rows Postgres wrote back — so every step arrived with
-  `id: undefined`. `JourneyBoard` keys its list by `step.id` and sends `stepId` when you
-  tick a box, so **after building a journey, no step could be ticked off until the page
-  was reloaded.** Now the insert does `.select(...)` and returns the persisted rows.
-  Regression test: "archives the old journey, persists the new one and its steps" asserts
-  the ids come back.
-- **A failed rebuild cost you your existing journey.** The old journey was archived
-  *before* the new one was inserted, so if the insert failed you were left with no active
-  journey at all — while the UI promises "your old progress is kept". Now the new journey
-  is inserted first, archiving happens only after the steps are safely stored (and skips
-  the new row via `.neq`), and a failed step insert rolls the parent row back. New test:
-  "does not cost the learner their old journey when saving the steps fails".
-- **Malformed JSON bodies returned 500.** `await req.json()` was unguarded in the chat
-  and step routes. Both now answer 400.
-
-Deliberately **not** changed: `app/api/chat/route.js` still ignores the result of its
-`chat_messages` insert. Failing the request would throw away a good grounded answer over
-a lost transcript, which is the worse trade. The choice is now commented rather than
-silent.
-
-### 3. Consistency
-
-- **`lib/testing/fakeSupabase.js` → `tests/support/queryBuilder.js`.** Test-only code was
-  living in the application source tree. It now sits beside master's `tests/support/`
-  doubles, and `lib/` holds only shipped code. The two Supabase doubles stay separate on
-  purpose — `supabase.js` models auth and a write log, `queryBuilder.js` models the
-  chained read/write builder — and the file header explains the split.
-- **`loadActiveJourney` was written three times** — in `app/api/journey/route.js`,
-  `app/journey/page.jsx` and (in narrower form) `app/dashboard/page.jsx`. One copy now
-  lives in `lib/journey.js` and all three call it, so the dashboard percentage and the
-  `/journey` progress bar cannot drift apart. Covered by three new tests.
-
-### 6. Wired the dashboard into the app
-
-The hub was reachable but not returnable, and it was missing a subsystem:
-
-- **Nothing linked back to `/dashboard`.** Login lands there, but `/` and `/analysis`
-  had no link to it, so leaving the hub meant retyping the URL. Both now show a
-  Dashboard link — inside the signed-in branch, since the page redirects anonymous
-  callers to `/login` anyway.
-- **The hub had no card for `/analysis`.** It linked to the screener and the journey but
-  not the error pattern analyser, which is the whole of PS4. Added as a fourth card;
-  the grid is `auto-fit`, so it reflows without touching the CSS.
-- **The chat log reset on every reload.** `ChatAssistant` started from an empty array
-  while `/api/chat` kept persisting messages *and* feeding the last turns back to the
-  model — so the assistant answered as if it remembered a conversation the page had
-  discarded, and follow-ups read as non-sequiturs. The dashboard now server-renders the
-  recent messages and passes them in as `initialMessages`.
-- **One definition of "this user's conversation".** `lib/chat.js` owns the read; the
-  route asks for `MODEL_HISTORY_TURNS` (6, prompt budget) and the dashboard for
-  `DISPLAYED_MESSAGES` (20, a readable transcript). Different limits, same query.
-  Four new tests, including one that pins the ordering — the query is newest-first so
-  the limit catches the latest messages, and a log rendered in that order reads
-  backwards.
-
-### 4. `.gitignore`
-
-It was already in good shape; nothing dirty was untracked-but-unignored. Added
-preventively: `.vscode/`, `.idea/`, `*.tsbuildinfo`, `.eslintcache`, `/dist`, `build/`,
-`*.egg-info/`, and a belt-and-braces `**/.env`. That last one matters — `rag-service/.env`
-holds a Supabase **service-role** key, which bypasses RLS entirely, and relying on a
-single ignore rule for it is not worth the risk. Verified no tracked file became ignored
-and both `.env.example` files stay visible.
-
-### 5. Docs
-
-`README.md` rewritten to cover all three subsystems, the two-process architecture, the
-env split and why the web app never holds a service-role key, the grounding guards, and
-the test layout. `tests/README.md` corrected — it still listed the NLP pipeline and the
-verdict rule as untested, but master's own later commits had covered them.
+`e2e-live.test.js > builds a journey` fails with `r.ok === false` while the service was up.
+Not investigated — the service went down before it could be reproduced by hand
+(`/health` now returns nothing, nothing bound to :8000). The sibling failure,
+`returns a grounded answer with citations`, is explained: the corpus is empty, so there
+are zero citations to assert on.
 
 ---
 
-### 7. Proved the JS ↔ Python integration end to end, without any secrets
+## Done in session 5
 
-Ran the real FastAPI service with an in-memory vector store swapped in for pgvector
-(FastAPI `dependency_overrides`, settings via environment variables so nothing read the
-real `.env`), then drove it through **`lib/ragService.js` itself** — the same function
-`/api/chat` calls. Real chunking, real `nomic-embed-text` embeddings, real cosine
-ranking, real generation.
+No commits yet — everything below is in the working tree.
 
-It works: a grounded answer drawn from the sample document, with the citation resolved
-to a real chunk. The off-topic guard, the offline path and the token-mismatch path all
-behaved correctly.
+- **Diagnosed the `/chat` 500.** PostgREST `PGRST202` on `match_document_chunks` was the
+  visible error; `scripts/check_schema.py` showed the six RAG tables are missing too.
+  `supabase/rag_schema.sql` has simply never been applied to this project. No code defect
+  — `db.py`'s RPC call matches the SQL signature exactly.
+- **Cleared Ollama as a suspect.** Server up, both configured models pulled, embedding
+  width confirmed at 768. Nothing to host: it is a local server already running.
+- **Restructured the docs** into three at root plus the progress file:
+  - `README.md` — rewritten, 513 → ~300 lines. Overview, architecture, per-page usage,
+    project layout, security, limitations. Setup/run/test/troubleshooting removed in
+    favour of pointers.
+  - `WORKFLOW.md` — **new.** First-time setup, daily loop, tests, branch/commit
+    conventions, pre-deploy checklist, all troubleshooting entries.
+  - `RAG_ORCHESTRATION.md` — **new.** Two-process split, env split, module map,
+    endpoints, ingestion and answering pipelines, the pgvector function, the three
+    grounding guards, threshold and model-sizing measurements, client failure modes.
+  - `rag-service/README.md` — **deleted** (`git rm`), content absorbed.
+- **Fixed a link the deletion would have broken.** `lib/ragService.js`'s offline message
+  pointed at `rag-service/README.md`; it now points at `WORKFLOW.md`. Its tests assert the
+  `offline` flag, not the message text, so they were unaffected.
 
-**But it is far too slow on this machine, and that exposed a defect.**
+### Stale claims corrected
 
-| | |
-|---|---|
-| One answer with `olmo2` | **187 seconds** |
-| Old client timeout | 30 seconds |
-| GPU | Intel Iris Xe, **1 GB VRAM** |
-| `ollama ps` | `olmo2` 6.7 GB — **100% CPU** |
+- **"The Supabase project no longer exists / does not resolve in DNS."** This was the
+  previous handoff's headline blocker and it is **no longer true.** The host resolves and
+  two tables hold live data. Only `rag_schema.sql` is unapplied.
+- **Test counts.** The old file said both "186 passed, 29 files" and "113 passed, 22
+  files". 186/29 is correct.
+- **`llama3.1:8b`** appeared as the generation model in the README diagram and model
+  table. The running config is `llama3.2:3b`; `llama3.1:8b` is only `config.py`'s built-in
+  default.
 
-The model cannot fit in 1 GB of VRAM, so Ollama silently runs it on the CPU. In a
-browser the request would always have aborted — and `lib/ragService.js` reported that
-abort as `offline: true`, showing *"The learning assistant is offline. Start the Python
-RAG service"* while the service was running and mid-answer. That points whoever reads it
-at the one component that is not broken.
+---
 
-Fixed: a `TimeoutError` is now told apart from an unreachable service and carries its own
-message naming the real cause; the budget is 120s by default and overridable with
-`RAG_SERVICE_TIMEOUT_MS`. Two new tests. The README now documents checking `ollama ps`
-and sizing the model to the hardware, and the troubleshooting section distinguishes the
-two messages.
+## In progress / next steps
 
-**Model choice: `llama3.2:3b`.** Measured on this machine, same question, same corpus:
+1. ~~**Apply the RAG schema.**~~ **Done** — `check_schema.py` reports
+   `Schema is fully applied.` as of session 6.
+2. **Ingest at least one document.** This is now the highest-value action in the project:
+   the corpus is empty, so Grounded mode answers every question with
+   `NO_MATERIAL_MESSAGE` and `/journey` has nothing to plan from. Normal mode works
+   regardless, but it is ungrounded by design.
+   ```bash
+   cd rag-service
+   .venv/Scripts/python.exe scripts/ingest_file.py path/to/guide.pdf \
+       --title "Phonics Guide" --doc-type guide --profiles phonological
+   ```
+   `docs/` already holds three DAS problem-statement PDFs that could seed the corpus.
+3. **Try the mode dropdown in the browser** — `/dashboard` → "Answer mode" →
+   *Normal — general knowledge*. Verified at the API layer this session but **not** in a
+   signed-in browser.
+4. **Re-run `npm test` and commit.** Suggested split:
+   ```bash
+   git add lib/nlp/align.test.js lib/nlp/g2p.test.js lib/nlp/morphology.test.js \
+           lib/nlp/phonemes.test.js lib/nlp/taxonomy.test.js \
+           lib/screening/handoff.test.js middleware.test.js
+   git commit -m "test: cover the remaining NLP stages, screening handoff and middleware"
 
-| Model | Cold (incl. load) | Warm |
-|---|---|---|
-| `olmo2:latest` (4.5 GB) | — | **187 s** |
-| `llama3.2:3b` (2.0 GB) | 38.2 s | **6.7 s** |
+   git add rag-service/scripts/check_schema.py .gitignore
+   git commit -m "chore(rag): add a schema checker and ignore decorated .env variants"
 
-Both still run 100% on CPU; the 3B model simply fits the machine. 6.7 s is a usable chat
-latency. Answers are terser than olmo2's but correctly grounded and cited, and the
-journey endpoint produced three ordered steps, each citing the source document.
+   git add README.md WORKFLOW.md RAG_ORCHESTRATION.md HANDOFF.md \
+           rag-service/README.md lib/ragService.js
+   git commit -m "docs: split into README, WORKFLOW and RAG_ORCHESTRATION"
 
-**Threshold validated, not assumed.** An off-topic reply in testing carried a citation,
-which looked like a grounding bug. It was not — the stub had `SIMILARITY_THRESHOLD` at
-0.3. Measured properly: on-topic best similarity **0.773** (5 of 5 chunks pass 0.5),
-off-topic best **0.302** (0 pass). The 0.5 default sits in the gap and the guard fires
-correctly. Recorded in the README so nobody "tunes" it downward without knowing the cost.
+   git add rag-service/app/plain.py rag-service/app/main.py rag-service/app/schemas.py \
+           rag-service/tests/test_plain.py rag-service/tests/test_endpoints.py \
+           app/api/chat/route.js app/api/chat/route.test.js app/dashboard/ChatAssistant.jsx \
+           app/dashboard/page.jsx app/globals.css lib/chat.js supabase/rag_schema.sql
+   git commit -m "feat(chat): add a Normal answering mode behind a two-call topic gate"
+   ```
+   Pushing stays yours — `git push` has been denied in previous sessions.
 
-## What is LEFT
+### Open design question, parked
 
-### Human-only setup, before the assistant can answer anything
+The user asked for the no-material reply to refer the learner to **a human coach**
+("need to check out with our human coach"). Brainstorming started and was parked.
 
-1. **`rag-service/.env` does not exist.** `config.py` reads `.env` relative to the
-   working directory, so it must live in `rag-service/` and uvicorn must run from there.
-   Needs `SERVICE_TOKEN` (equal to `RAG_SERVICE_TOKEN` in the root `.env`),
-   `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `OLLAMA_HOST`.
-2. **Move `SUPABASE_SERVICE_ROLE_KEY` out of the root `.env`.** It is not
-   `NEXT_PUBLIC_`, so it does not reach the browser — but it is loaded into the Next
-   server process for no reason, and the point of the split is that the web app cannot
-   bypass RLS.
-3. Apply `supabase/rag_schema.sql` (after `schema.sql` and `error_analyses.sql`).
-4. Ollama running with `nomic-embed-text` and `llama3.1:8b` pulled.
-5. Ingest at least one document, or the assistant will correctly say it has no material.
+What already exists: `answer_question()` returns `NO_MATERIAL_MESSAGE` without ever
+calling the model, so the honest-refusal behaviour is done. What is missing is the
+referral itself. Undecided:
 
-### Signed-in browser checks (need your credentials)
+- Copy-only reword, or a structured flag (e.g. `needs_human: true`) the UI renders as a
+  distinct callout rather than an ordinary chat bubble?
+- Is there a real coach contact channel (mailto, booking link) to point at?
+- Does it apply to `compose_journey`'s empty-journey note too?
+- Should it also fire when the *model* says it lacks material (`generation.py:91`), not
+  just when retrieval returns nothing?
 
-Everything below is automatable-verified already except the parts that need a real
-session and a live service:
+### Signed-in browser checks (need real credentials + an ingested corpus)
 
-1. **Offline** — service stopped, sign in → land on `/dashboard`; ask a question →
-   "assistant offline", no crash.
+1. **Offline** — service stopped, sign in → `/dashboard`; ask a question → "assistant
+   offline", no crash.
 2. **No profile** — fresh account → `/journey` → "Build my journey" → told to run a
    screening first.
 3. **Nothing ingested** — service up, corpus empty → the service's note appears and no
    blank journey is saved.
-4. **Build** — service up with a document ingested → steps render in order, each with a
-   `Sources:` line.
-5. **Track** — tick a step → the bar moves on `/journey` *and* on `/dashboard`; reload →
-   it persisted; untick → `completed_at` clears. (This is the path that was broken before
-   this session's fix — worth checking first.)
+4. **Build** — corpus ingested → steps render in order, each with a `Sources:` line.
+5. **Track** — tick a step → the bar moves on `/journey` *and* `/dashboard`; reload → it
+   persisted; untick → `completed_at` clears.
 6. **Rebuild** — the old journey goes to `status='archived'`, not deleted.
-7. **Chat log survives a reload** — ask a question, reload `/dashboard`, and the
-   exchange is still there rather than an empty log.
-8. **Navigation** — from `/dashboard` reach the screener, the analyser and the journey;
-   from each of those get back to `/dashboard`.
-
-### Deliberately out of scope (recorded, not oversights)
-
-- **No separate `/chat` page.** Spec §8 lists one; the assistant is already embedded on
-  `/dashboard`, so a duplicate adds no capability.
-- **`chat_messages.journey_id` stays unset.** The column exists and is nullable.
-- **Material download does not exist.** Ingestion discards the source file after
-  chunking. `tests/README.md` note 5 has the closing steps.
+7. **Chat log survives a reload.**
+8. **Navigation** — reach the screener, analyser and journey from `/dashboard`, and get
+   back from each.
 
 ---
 
-## How to RUN it
+## Blockers
 
-Full instructions are now in the **README** — it is the source of truth, not this file.
-Short version: `npm run dev` for the web app; `uvicorn app.main:app --port 8000` from
-`rag-service/` for the assistant.
+**None hard.** The session-5 blocker (`rag_schema.sql` unapplied) is cleared — verified
+this session.
 
-### Tests
+Two soft ones:
 
-```bash
-npm test                                      # 113 passed, 22 files
-cd rag-service && .venv/Scripts/python.exe -m pytest -q   # 34 passed, 1 skipped
-```
+- **The corpus is empty**, so Grounded mode and `/journey` have nothing to work with. Not
+  a defect; step 2 of *Next steps* fixes it.
+- **`chat_messages.mode` is not applied**, by choice, so mode badges do not survive a
+  reload. The two-line SQL and the three code changes are written out under *Deliberately
+  not done* above.
+
+DDL still cannot be applied from the CLI here: no `supabase` CLI, no `psql`, no database
+password in `rag-service/.env` (only the service-role key), and PostgREST does not execute
+DDL. Anything schema-related has to go through the dashboard SQL Editor.
+
+---
+
+## Decisions and why
+
+- **The topic gate is two model calls, not one.** Measured, not assumed: one call scored
+  5/8 and wrote a working quicksort in a dyslexia assistant; two scored 8/8 live for
+  +1.5 s. A model asked to be helpful and to police its own scope in the same breath
+  picks helpful.
+- **"Normal" on screen, `plain` on the wire.** The stored value matches the spec, the
+  module name and the SQL check constraint; the label matches what actually reads as the
+  opposite of "Grounded" to a learner. `MODES` in `ChatAssistant.jsx` is the one place
+  the two are mapped.
+- **An unrecognised `mode` is answered, not rejected.** `route.js` normalises it to
+  `grounded` — the safe fallback is the one that cites sources, so a stale browser gets a
+  good answer rather than an error. The service independently 422s a third value, so no
+  other caller can invent one.
+- **A broken classifier reply and a broken answer reply resolve differently.** The first
+  is "off topic", the second is "I'm not sure". Once the gate has passed, blaming scope
+  would misreport what failed.
+- **`/journey` is grounded-only.** An uncited learning plan is precisely what guard 3
+  exists to prevent, so the mode never reaches it.
+- **`llama3.2:3b`, not an 8B model.** Measured on this machine (Intel Iris Xe, ~1 GB
+  VRAM): `olmo2` warm **187 s** per answer vs `llama3.2:3b` warm **6.7 s**. Both run 100%
+  on CPU — the 3B simply fits. Change it back only on a machine with real VRAM.
+- **`SIMILARITY_THRESHOLD` stays 0.5.** Measured, not assumed: on-topic best similarity
+  **0.773** (5 of 5 chunks pass), off-topic best **0.302** (0 pass). At 0.3 an off-topic
+  reply carried a citation. Recorded in `RAG_ORCHESTRATION.md` so nobody tunes it down
+  without knowing the cost.
+- **`app/api/chat/route.js` still ignores its `chat_messages` insert result.** Failing the
+  request would throw away a good grounded answer over a lost transcript. The choice is
+  commented rather than silent.
+- **HANDOFF.md kept rather than folded away.** The docs restructure originally deleted it;
+  the global instruction to keep a root progress file takes precedence, so it stays and
+  the three-doc split sits alongside it.
+- **Docs split three ways** because one 513-line README was mixing three audiences:
+  someone evaluating the project, someone setting it up, and someone changing the RAG
+  internals.
 
 ---
 
 ## Key file map
 
-- Consolidation plan: `docs/superpowers/plans/2026-07-31-rag-consolidation.md`
 - Design spec: `docs/superpowers/specs/2026-07-25-rag-learning-journey-design.md`
+- Consolidation plan: `docs/superpowers/plans/2026-07-31-rag-consolidation.md`
 - Plan 1 (backend): `docs/superpowers/plans/2026-07-25-rag-backend.md`
 - Plan 2 (dashboard+chat): `docs/superpowers/plans/2026-07-26-rag-dashboard-integration.md`
 - Plan 3 (journey+progress): `docs/superpowers/plans/2026-07-26-journey-progress-tracking.md`
-- Backend code: `rag-service/`, `supabase/rag_schema.sql`
+- Chat mode routing spec: `docs/superpowers/specs/2026-08-03-chat-mode-routing-design.md`
+  (its topic-gate section is marked SUPERSEDED — read that part before trusting it)
+- Backend code: `rag-service/`, `supabase/rag_schema.sql`, `rag-service/app/plain.py`
 - Web integration: `lib/profile.js`, `lib/ragService.js`, `lib/journey.js`,
   `app/api/chat/`, `app/api/journey/`, `app/dashboard/`, `app/journey/`
 

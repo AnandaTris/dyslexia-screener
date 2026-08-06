@@ -4,8 +4,12 @@
 # it too, and one of the two failing open is not a risk worth carrying.
 /.env
 **/.env
-.env*.local
+# Any decorated variant too — `.env.bak`, `.env.old`, `.env.local`. Splitting the
+# service key out of the root file produces backups, and `**/.env` alone does not
+# cover them, so a copy of a service-role key would sit stageable in the tree.
+**/.env.*
 !.env.example
+!**/.env.example
 
 # --- Dependencies ---
 /node_modules

@@ -67,8 +67,26 @@ create table if not exists public.chat_messages (
   role       text not null check (role in ('user','assistant')),
   content    text not null,
   citations  jsonb not null default '[]',
+  -- Which answering path produced the row. 'grounded' = retrieval + citations,
+  -- 'plain' = the model's general knowledge with no sources (shown as "Normal"
+  -- in the UI). Recorded so a reloaded transcript can still mark the ungrounded
+  -- answers instead of letting them pass as cited ones.
+  mode       text not null default 'grounded' check (mode in ('grounded','plain')),
   created_at timestamptz not null default now()
 );
+
+-- For a project where chat_messages already exists, `create table if not exists`
+-- above is a no-op and will NOT add the column. This does.
+alter table public.chat_messages
+  add column if not exists mode text not null default 'grounded';
+
+do $$
+begin
+  alter table public.chat_messages
+    add constraint chat_messages_mode_check check (mode in ('grounded','plain'));
+exception
+  when duplicate_object then null;
+end $$;
 
 create index if not exists journeys_user_idx on public.journeys (user_id, created_at desc);
 create index if not exists journey_steps_journey_idx on public.journey_steps (journey_id, step_index);

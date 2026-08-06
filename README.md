@@ -1,8 +1,8 @@
 # DAS D.I.A.L. — Screener, Error Pattern Analyzer, Learning Assistant
 
-A Next.js app for the DAS Individualised AI-Based Learning System, with a separate
-Python service for the retrieval-augmented learning assistant. It covers three of the
-problem statements:
+A Next.js app for the DAS Individualised AI-Based Learning System, with a separate Python
+service for the retrieval-augmented learning assistant. It covers three of the problem
+statements:
 
 - **PS1 — Learning Screening Engine.** Reads a photo of handwriting and flags
   surface-level indicators associated with dyslexia (Gemini vision).
@@ -10,12 +10,22 @@ problem statements:
   every spelling error as phonological / orthographic / morphological / visual, and
   describes which error *pattern* the sample fits.
 - **PS3 — Adaptive learning, in part.** A grounded chat assistant and a step-by-step
-  **learning journey**, both built from the learner's derived profile and drawn only
-  from resources you have uploaded. Every answer and every step cites its source.
+  **learning journey**, both built from the learner's derived profile and drawn only from
+  resources you have uploaded. Every answer and every step cites its source.
 
 > **This is a screening aid, not a diagnostic tool.** Dyslexia and its profiles can only
 > be identified through a full psychoeducational assessment by a qualified professional.
 > The app states this in the UI, in the model prompt, and in every generated report.
+
+### The other docs
+
+| Doc | For |
+|---|---|
+| **[`WORKFLOW.md`](WORKFLOW.md)** | Setup, running, tests, commits, troubleshooting |
+| **[`RAG_ORCHESTRATION.md`](RAG_ORCHESTRATION.md)** | How the learning assistant works internally |
+| **[`docs/NLP_ARCHITECTURE.md`](docs/NLP_ARCHITECTURE.md)** | The full PS4 pipeline write-up |
+| **[`tests/README.md`](tests/README.md)** | Test plan → test traceability, and the gaps |
+| **[`HANDOFF.md`](HANDOFF.md)** | Current state and what to pick up next |
 
 ---
 
@@ -42,16 +52,15 @@ the assistant simply reports that it is offline.
                     (RLS enforced)          (RAG store only)
 ```
 
-**The web app never holds a service-role key.** It talks to Supabase with the public
-anon key, so row-level security is what protects a learner's data. Only the Python
-service holds the service-role key, and only it writes the document corpus — which is
-why the RAG tables are RLS deny-all: your public anon key cannot poison the corpus.
+**The web app never holds a service-role key.** It talks to Supabase with the public anon
+key, so row-level security is what protects a learner's data. Only the Python service
+holds the service-role key, and only it writes the document corpus — which is why the RAG
+tables are RLS deny-all: your public anon key cannot poison the corpus.
 
----
+**Nothing is sent to a third party** by the assistant. Both the embedding model and the
+generation model run locally through Ollama. Gemini is used for PS1 vision only.
 
 ## Quick start
-
-The screener and the analyser need only the web app:
 
 ```bash
 npm install
@@ -60,184 +69,55 @@ npm run warm:nlp               # one-time, ~1 min: downloads and caches the NLP 
 npm run dev
 ```
 
-Apply the database schema (below) and open <http://localhost:3000>. The chat and
-journey pages will say the assistant is offline until you also run the Python service —
-everything else works.
-
-### 1. Dependencies
-
-```bash
-npm install
-```
-
-### 2. Environment variables
-
-There are **two** env files, and the split is deliberate.
-
-**Root `.env`** — read by the Next.js server:
-
-```
-GEMINI_API_KEY=your_key_here
-NEXT_PUBLIC_SUPABASE_URL=https://yourproject.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key_here
-RAG_SERVICE_URL=http://localhost:8000
-RAG_SERVICE_TOKEN=a_long_random_string
-```
-
-**`rag-service/.env`** — read by the Python service, and by nothing else:
-
-```
-SERVICE_TOKEN=a_long_random_string        # must equal RAG_SERVICE_TOKEN above
-SUPABASE_URL=https://yourproject.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-OLLAMA_HOST=http://localhost:11434
-```
-
-`GEMINI_API_KEY` is server-only and never reaches the browser. The two `NEXT_PUBLIC_`
-Supabase values are public by design — RLS protects the data, not secrecy of the anon
-key.
-
-`SUPABASE_SERVICE_ROLE_KEY` bypasses row-level security entirely. **Keep it out of the
-root `.env`.** Putting it there loads it into the Next.js server process for no reason,
-and the whole point of the two-process split is that the web app cannot bypass RLS even
-if it is compromised. `rag-service/app/config.py` reads `.env` relative to the working
-directory, so run uvicorn *from* `rag-service/` and it picks up the right file.
-
-Optional Python tuning, with defaults: `EMBEDDING_MODEL` (`nomic-embed-text`),
-`GENERATION_MODEL` (`llama3.1:8b`), `RETRIEVAL_K` (`6`), `SIMILARITY_THRESHOLD` (`0.5`).
-
-`GENERATION_MODEL` can point at **any** chat model you already have pulled — the code
-asks Ollama for JSON-formatted output and does not depend on a specific checkpoint.
-`EMBEDDING_MODEL` is not interchangeable: it must be a real embedding model, and the
-schema's vector column is sized for `nomic-embed-text`'s 768 dimensions, so changing it
-needs a migration.
-
-### Pick the model for your hardware, not the other way round
-
-This matters more than it looks. Check where Ollama actually puts the model:
-
-```bash
-ollama ps        # the PROCESSOR column says 100% CPU or 100% GPU
-```
-
-A 7B–8B model needs roughly 6–8 GB of VRAM. On an integrated GPU (Intel Iris Xe and
-similar have about 1 GB) it will not fit, and Ollama silently falls back to **100% CPU**
-— correct answers, but measured here at **187 seconds each**. A 3B model on the same
-machine is several times faster, and that is the difference between a usable assistant
-and one that looks broken.
-
-If `ollama ps` says `100% CPU`, use a 3B model. If it says `100% GPU`, an 8B is fine.
-
-`RAG_SERVICE_TIMEOUT_MS` (root `.env`, default `120000`) is how long the Next.js app
-waits before giving up. It is deliberately generous because the model is local. On a
-machine with a real GPU you can safely cut it to `30000`.
-
-### 3. Database
-
-In the Supabase dashboard → **SQL Editor** → **New query**, run the files in order:
-
-1. `supabase/schema.sql` — the `screenings` table (PS1)
-2. `supabase/error_analyses.sql` — the `error_analyses` table (PS4)
-3. `supabase/rag_schema.sql` — pgvector, the six RAG tables, RLS, and the
-   `match_document_chunks` cosine-similarity function (PS3)
-
-All of them enable row-level security so a user can only ever read their own rows. The
-RAG document store goes further and is deny-all to the anon key.
-
-### 4. Warm the NLP model
-
-```bash
-npm run warm:nlp
-```
-
-Downloads ~70 MB of quantised model weights, caches them, then smoke-tests the whole
-pipeline and prints the errors it found. **Run this before your first analysis** —
-without it, the first request pays for the download inside its own timeout.
-
-The cache lives in `node_modules/@huggingface/transformers/.cache`, so a fresh
-`npm ci` wipes it and you need to re-run this.
-
-### 5. Run
-
-```bash
-npm run dev          # development
-npm run build        # production build
-npm start            # serve the production build
-```
-
-Create an account at `/signup`. Login lands you on `/dashboard`.
-
-### 6. The learning assistant (optional second process)
-
-Only needed for the chat and the journey to actually answer. Full instructions in
-[`rag-service/README.md`](rag-service/README.md); the short version:
-
-```bash
-# once: install Ollama from https://ollama.com, then
-ollama pull nomic-embed-text
-ollama pull llama3.1:8b
-
-cd rag-service
-python -m venv .venv
-.venv/Scripts/python.exe -m pip install -r requirements.txt   # macOS/Linux: .venv/bin/python
-cp .env.example .env          # then fill it in, per the split above
-
-.venv/Scripts/python.exe -m uvicorn app.main:app --port 8000
-```
-
-Then give it something to be grounded in — with an empty corpus the assistant
-truthfully answers that it has no material:
-
-```bash
-.venv/Scripts/python.exe scripts/ingest_file.py ./phonics.pdf \
-    --title "Phonics Guide" --doc-type guide --profiles phonological
-```
+Apply the database schema and open <http://localhost:3000>. The chat and journey pages
+will say the assistant is offline until you also run the Python service — everything else
+works. **Full instructions: [`WORKFLOW.md`](WORKFLOW.md).**
 
 ---
 
 ## Using it
 
-**`/` — the screener (PS1).** Drag in a photo or a PDF of handwriting. Gemini
-transcribes it and screens it for visible indicators (reversals, spacing, letter
-sizing). A PDF may run to several pages; all of them are read. Uploads are capped at
-8 MB, because the file is base64-encoded into the API request and the whole request
-has to stay under the inline-data limit.
+**`/` — the screener (PS1).** Drag in a photo or a PDF of handwriting. Gemini transcribes
+it and screens it for visible indicators (reversals, spacing, letter sizing). A PDF may
+run to several pages; all of them are read. Uploads are capped at 8 MB, because the file
+is base64-encoded into the API request and the whole request has to stay under the
+inline-data limit.
 
 The verdict is not the model's own label. Gemini supplies the evidence — an
-evidence-strength score and a list of indicators — and `lib/screening/verdict.js`
-decides from it: `likely` needs a score of 55 or more, unless every indicator found is
-a letter reversal and the writer is under seven, in which case the verdict is held at
-`unlikely` and the reason is shown. Both thresholds are exported constants. This is a
-transparent rule over LLM-extracted features, not a trained classifier.
+evidence-strength score and a list of indicators — and `lib/screening/verdict.js` decides
+from it: `likely` needs a score of 55 or more, unless every indicator found is a letter
+reversal and the writer is under seven, in which case the verdict is held at `unlikely`
+and the reason is shown. Both thresholds are exported constants. This is a transparent
+rule over LLM-extracted features, not a trained classifier.
 
-**`/analysis` — the error pattern analyser (PS4).** Paste the student's writing exactly
-as they wrote it, mistakes and all. Runs the local NLP pipeline and reports the error
+**`/analysis` — the error pattern analyser (PS4).** Paste the student's writing exactly as
+they wrote it, mistakes and all. Runs the local NLP pipeline and reports the error
 profile. The first run loads the grammar-correction model, so give it a moment.
 
-**`/dashboard` — the hub.** Where login lands. Links to the screener, the analyser and
-the journey, shows the profile derived from your latest screening, and embeds the chat
+**`/dashboard` — the hub.** Where login lands. Links to the screener, the analyser and the
+journey, shows the profile derived from your latest screening, and embeds the chat
 assistant. The chat log is server-rendered from your stored messages, so it survives a
-reload and matches the history the assistant is actually given. Every other page carries
-a Dashboard link back.
+reload and matches the history the assistant is actually given. Every other page carries a
+Dashboard link back.
 
 **`/journey` — the learning journey (PS3).** Builds an ordered set of steps from your
 derived profile and the uploaded resources, each step citing where it came from. Tick a
-step off and the progress bar moves on both this page and the dashboard card.
-Rebuilding archives the old journey rather than deleting it, so past progress survives.
+step off and the progress bar moves on both this page and the dashboard card. Rebuilding
+archives the old journey rather than deleting it, so past progress survives.
 
 The optional **writer's age** field is used only to judge whether letter reversals are
-developmentally expected (common under about seven). It is passed to the screening
-model and to the verdict rule.
+developmentally expected (common under about seven). It is passed to the screening model
+and to the verdict rule.
 
 ### What the error analysis gives you
 
 - A **profile**: phonological, surface/orthographic, morphological, visual, or mixed —
   with a confidence score and a breakdown of the evidence.
 - **Where to focus teaching**, tied to that profile.
-- **Every error found**, with what was written, what was meant, its category, and
-  whether the misspelling still sounds like the target word.
-- **Recurring patterns** (e.g. `missing "g"`, seen 4 times) and words misspelled more
-  than once or spelled inconsistently.
+- **Every error found**, with what was written, what was meant, its category, and whether
+  the misspelling still sounds like the target word.
+- **Recurring patterns** (e.g. `missing "g"`, seen 4 times) and words misspelled more than
+  once or spelled inconsistently.
 - **Caveats** that fire automatically for short samples, transcribed text, high reversal
   counts, or uncertain reconstructions.
 
@@ -245,7 +125,9 @@ If a sample has fewer than four analysable errors, no profile is claimed at all.
 
 ---
 
-## How the learning assistant works
+## The learning assistant
+
+Full detail: **[`RAG_ORCHESTRATION.md`](RAG_ORCHESTRATION.md)**
 
 The screening produces indicators; `lib/profile.js` turns those into a **dyslexia
 profile** with a `phonological` / `surface` / `visual_spatial` emphasis, stored in
@@ -253,61 +135,22 @@ profile** with a `phonological` / `surface` / `visual_spatial` emphasis, stored 
 retrieval is filtered by it, so a learner with a phonological emphasis is shown
 phonological material first.
 
-```
-screening indicators ─► lib/profile.js ─► learner_profiles
-                                                │
-                        question ───────────────┤
-                                                ▼
-                          embed (nomic-embed-text, 768-dim)
-                                                ▼
-                          match_document_chunks (pgvector, cosine)
-                                                ▼
-                          top-k chunks above the similarity threshold
-                                                ▼
-                          llama3.1:8b — "use ONLY these excerpts"
-                                                ▼
-                          {answer, citations} ─► rendered with a Sources: line
-```
+A question is embedded locally, matched against the ingested corpus by cosine similarity
+in pgvector, and only chunks above the similarity threshold are handed to the local LLM
+with an instruction to use nothing else. Three guards stop it inventing a source: **no
+chunks means no model call at all**, citations are **resolved against the retrieved chunks
+rather than trusted**, and an empty journey is never saved. The threshold that guard 1
+rests on was measured, not guessed — the numbers are in the orchestration doc.
 
-**Nothing is sent to a third party.** Both the embedding model and the generation model
-run locally through Ollama. Gemini is used for PS1 vision only.
-
-### Why it will not invent a source
-
-Three guards, in order of how much they matter:
-
-1. **No chunks, no model call.** If retrieval comes back empty, `compose_journey` and
-   `answer_question` return a fixed "I don't have material on that" message without ever
-   prompting the LLM. An empty corpus cannot produce a confident answer.
-2. **Citations are resolved, not trusted.** The model returns `source_ids`; the service
-   looks each one up in the chunks that were actually retrieved and drops any it cannot
-   find. A hallucinated citation never reaches the UI.
-3. **An empty journey is never saved.** If the service returns no steps, the route hands
-   back the note and persists nothing, so a learner is never left with a blank board.
-
-Guard 1 rests entirely on `SIMILARITY_THRESHOLD`, so the default is not arbitrary.
-Measured against a phonics document with `nomic-embed-text`:
-
-| Question | Best cosine similarity | Chunks passing 0.5 |
-|---|---|---|
-| "How should I start phonological awareness work?" | **0.773** | 5 of 5 |
-| "What is the capital of Argentina?" | **0.302** | **0** |
-
-The default of `0.5` sits in the gap. Lower it much and off-topic questions start
-retrieving marginal chunks, which is enough for the model to answer from — dropping it
-to `0.3` in testing was enough to make an off-topic reply carry a citation.
-
-The failure mode this leaves is an unhelpful answer, not a confident wrong one. That is
-the right way round for a tool used on children.
-
----
+**The assistant is only as good as what you ingest.** It cannot answer beyond the uploaded
+corpus, by design. That is a feature for safety and a limit on usefulness.
 
 ## How the NLP works (short version)
 
 Full write-up: **[`docs/NLP_ARCHITECTURE.md`](docs/NLP_ARCHITECTURE.md)**
 
-The hard question is not "is this word misspelled" but "*why*". Two misspellings that
-look equally wrong come from opposite places:
+The hard question is not "is this word misspelled" but "*why*". Two misspellings that look
+equally wrong come from opposite places:
 
 | Written | Intended | Sounds like the target? | Category |
 |---|---|---|---|
@@ -329,9 +172,9 @@ text
 ```
 
 The **neural** and **lexicon** layers are complementary, not redundant. A dictionary can
-only see words that do not exist, so it is structurally blind to `their` for `there`.
-The seq2seq model reads the sentence and catches those. Conversely the model
-paraphrases, so its proposals are filtered and re-scored against the lexicon's own.
+only see words that do not exist, so it is structurally blind to `their` for `there`. The
+seq2seq model reads the sentence and catches those. Conversely the model paraphrases, so
+its proposals are filtered and re-scored against the lexicon's own.
 
 ### The open-source models
 
@@ -341,13 +184,13 @@ paraphrases, so its proposals are filtered and re-scored against the lexicon's o
 | Base | `vennify/t5-base-grammar-correction` — T5-base, Apache-2.0, trained on JFLEG |
 | Runtime | `@huggingface/transformers` (Transformers.js), ONNX, `q8` quantisation |
 | Embeddings (RAG) | `nomic-embed-text`, 768-dim, via Ollama |
-| Generation (RAG) | `llama3.1:8b`, via Ollama |
+| Generation (RAG) | `llama3.2:3b`, via Ollama — see the orchestration doc on sizing |
 | Where they run | Locally. **Nothing is sent to a third party.** |
 
-We tested `Xenova/grammar-synthesis-small` first and rejected it — it hallucinates.
-Given `The dof ran to the bark and the dall was reb.` it returns *"The dog was killed by
-a car wreck."* In a diagnostic tool an invented rewrite becomes an invented error in a
-child's report, so faithfulness beat model size.
+We tested `Xenova/grammar-synthesis-small` first and rejected it — it hallucinates. Given
+`The dof ran to the bark and the dall was reb.` it returns *"The dog was killed by a car
+wreck."* In a diagnostic tool an invented rewrite becomes an invented error in a child's
+report, so faithfulness beat model size.
 
 Other open-source components: `nspell` + `dictionary-en` (Hunspell, MIT/BSD),
 `cmu-pronouncing-dictionary` (ISC).
@@ -361,47 +204,8 @@ Other open-source components: `nspell` + `dictionary-en` (Hunspell, MIT/BSD),
 | `NLP_GEC_PREFIX` | `grammar: ` | Task prefix; set empty for grammar-synthesis models |
 | `NLP_GEC_DTYPE` | `q8` | ONNX quantisation |
 
-With `NLP_GEC=off` the app still runs on its lexicon and phonology layers, and says so
-in the report.
-
----
-
-## Tests
-
-```bash
-npm test                 # the whole JS suite
-npm run test:unit        # tests/unit only
-npm run test:integration # tests/integration only
-npm run test:watch
-```
-
-```bash
-cd rag-service
-.venv/Scripts/python.exe -m pytest -q     # macOS/Linux: .venv/bin/python
-```
-
-Nothing reaches the network and no API key is needed — the vision model, the Supabase
-service and the RAG service are all doubled at the boundary — so both suites run in
-seconds.
-
-Two conventions live side by side, and `vitest.config.mjs` picks up both so neither can
-go quietly unrun:
-
-- **Colocated** `*.test.js` beside the code it covers — `lib/`, `app/api/`, `app/login/`.
-- **`tests/`** — one test per case in the team's test plan: sign-up and email
-  confirmation, login and authentication, the screening route, and the integrated
-  sequences. The learning-material use cases live with the code they test, in
-  `rag-service/tests/`.
-
-**[`tests/README.md`](tests/README.md)** maps every case in the test plan to the test
-that covers it, states which rows have no implementation behind them yet (a mobile
-number on sign-up, downloading a material file, a `studentRef` on a screening), and
-lists what the suite deliberately does not cover.
-
-Test doubles live in `tests/support/`: `supabase.js` models the auth surface and a write
-log, `queryBuilder.js` models the chained read/write query builder the journey routes
-lean on, `model.js` doubles the vision model, and `redirect.js` captures the redirects
-server actions throw.
+With `NLP_GEC=off` the app still runs on its lexicon and phonology layers, and says so in
+the report.
 
 ---
 
@@ -439,9 +243,9 @@ lib/
     morphology, align, classify, taxonomy, persist
   supabase/                    browser + server Supabase clients
 
-rag-service/                   Python FastAPI service (PS3)
+rag-service/                   Python FastAPI service (PS3) — see RAG_ORCHESTRATION.md
   app/
-    main.py                    /ingest, /chat, /journey
+    main.py                    /health, /ingest, /chat, /journey
     config.py                  settings, read from rag-service/.env
     chunking.py                document → overlapping chunks
     embeddings.py              Ollama embedding client
@@ -450,6 +254,7 @@ rag-service/                   Python FastAPI service (PS3)
     retrieval.py               profile-filtered similarity search
     generation.py              grounded generation + citation resolution
   scripts/ingest_file.py       CLI to load a .txt/.pdf source
+  scripts/check_schema.py      reports which parts of rag_schema.sql are live
   tests/                       pytest suite
 
 tests/
@@ -468,48 +273,75 @@ docs/PROJECT_BRIEF.md          course handout + problem statements
 
 ---
 
-## Troubleshooting
+## Security
 
-**First analysis hangs or times out.** The model was not warmed. Run `npm run warm:nlp`.
+This app holds children's writing samples and an educator's account, so the trust model is
+worth stating explicitly rather than leaving implied.
 
-**Report says "the contextual correction model was unavailable".** The weights could not
-be fetched. The analysis still ran on the lexicon and phonology layers, but homophone
-errors (their/there, to/too) were not detected. Check your network and re-run
-`npm run warm:nlp`.
+### What protects the data
 
-**"The learning assistant is offline."** The Next.js app could not reach the Python
-service. Check that uvicorn is running on the port in `RAG_SERVICE_URL`, and that
-`RAG_SERVICE_TOKEN` and `SERVICE_TOKEN` are identical — a mismatch returns 401, which
-the UI also surfaces as an error.
+**Row-level security is the boundary, not the app code.** Every table — `screenings`,
+`error_analyses`, `learner_profiles`, `journeys`, `journey_steps`, `chat_messages` — has
+RLS enabled with an `auth.uid() = user_id` policy. The web app only ever holds the public
+anon key, so a bug in a route handler cannot read another educator's rows; Postgres
+refuses. `journey_steps` is policed through its parent journey, which is why
+`PATCH /api/journey/step` does no ownership check of its own: a step id belonging to
+someone else matches no row and comes back as a 404.
 
-**The assistant says it has no source material.** The corpus is empty, or nothing
-cleared the similarity threshold. Ingest a document with `scripts/ingest_file.py`, or
-lower `SIMILARITY_THRESHOLD`.
+**The service-role key is isolated.** It bypasses RLS entirely and lives only in
+`rag-service/.env`. It is never loaded into the Next.js process. The two RAG store tables
+(`documents`, `document_chunks`) have RLS on with *no* policies at all — deny-all — so only
+the Python service can read or write the corpus, and the anon key cannot poison it.
 
-**"The learning assistant took too long to answer."** The service is running and the
-model is working — it is just slower than the timeout. Run `ollama ps`: if the processor
-column reads `100% CPU`, the model does not fit in your GPU and you want a smaller
-`GENERATION_MODEL` (see above). Raising `RAG_SERVICE_TIMEOUT_MS` will stop the error but
-will not make the wait bearable. Note this is a *different* message from the offline one
-— if you see "assistant is offline" instead, the service genuinely is not reachable.
+**Defence in depth on auth.** `middleware.js` is the single gate, but every API route
+independently re-checks `getUser()` rather than trusting it. Middleware redirects are built
+from `request.nextUrl.clone()`, so a forged `Host` header cannot turn the login redirect
+into an off-site one. API routes under `/api/` get a JSON 401 instead of an HTML login
+page, so a client calling `res.json()` sees the real reason.
 
-**"Run a writing screening first."** The journey is built from a derived profile, and
-there is no screening on this account yet. Run one at `/`.
+**Other verified properties.** No secret has ever been committed — `.env` and
+`rag-service/.env` have never been tracked, and no key-shaped string exists in any tracked
+file. All database access goes through Supabase's query builder, so there is no
+string-concatenated SQL anywhere. There is no `dangerouslySetInnerHTML`, `innerHTML` or
+`eval` in the codebase, so React's escaping is intact. The service token is compared with
+`hmac.compare_digest` (timing-safe) and fails closed when unset.
 
-**The Python service starts but every call fails on Supabase.** Either `rag_schema.sql`
-has not been applied, or `rag-service/.env` is missing and the service is running with
-empty settings. It reads `.env` relative to the working directory — run uvicorn from
-`rag-service/`.
+**Uploads** are whitelisted by type and capped at 8 MB, and `/api/analyze-text` caps input
+at 20,000 characters.
 
-**Build fails with `The "path" argument must be of type string`.** A package that reads
-its own data files got bundled by webpack. Add it to
-`experimental.serverComponentsExternalPackages` in `next.config.mjs`.
+### Known gaps
 
-**"Too many confirmation emails have been sent."** Supabase's free-tier email quota.
-Wait about an hour, or sign in with an account you already created.
+Recorded honestly — these are real and currently unmitigated. The
+[pre-deploy checklist](WORKFLOW.md#pre-deploy-checklist) tracks them as actions.
 
-**Signup succeeds but login says email not confirmed.** Either confirm via the emailed
-link, or turn off email confirmation in Supabase → Authentication → Providers → Email.
+| Gap | Impact |
+|---|---|
+| **No rate limiting on any endpoint** | `/api/chat` and `/api/journey` each trigger a local CPU-bound LLM (measured 7–35 s per call). Any signed-in user can saturate the machine. `/api/analyze` spends paid Gemini quota per call. |
+| **`/api/chat` does not bound question length** | Its sibling `/api/analyze-text` caps at 20,000 chars; chat accepts any string, forwards it to the model and stores it. |
+| **No security headers** | `next.config.mjs` defines no `headers()`, so there is no CSP, `frame-ancestors`/X-Frame-Options, HSTS, `X-Content-Type-Options` or `Referrer-Policy`. The authenticated dashboard is framable. |
+| **Raw error text reaches the client** | `app/api/analyze/route.js` returns `err.message` from any unexpected throw, and the raw model output when JSON parsing fails. |
+| **Account enumeration on signup** | Signing up an existing address is answered with "that email is already registered". Deliberate — it saves the free-tier email quota — but it is an existence oracle. |
+| **Upload MIME type is client-supplied** | `/api/analyze` trusts `upload.type` with no magic-byte check. Impact is limited: the bytes are forwarded to Gemini, not parsed locally. |
+
+### Dependencies
+
+`npm audit` reports 11 vulnerabilities (1 critical, 7 high). Triaged:
+
+- **Next.js 14.2.35 carries 21 open advisories**, several high and runtime-reachable — DoS
+  in App Router Server Actions, SSRF in Server Actions, unauthenticated disclosure of
+  internal Server Function endpoints, and cache-poisonable middleware redirects. This app
+  uses Server Actions for auth and relies on middleware for its auth boundary, so these
+  apply. **This is the one that matters.** The fix is Next ≥ 15.5.21, a major upgrade.
+- **`vitest` (critical) and `vite`/`esbuild`/`vite-node` are dev-only.** The critical
+  requires the Vitest **UI server** to be listening; this project never runs `vitest --ui`,
+  and none of it ships. Fixed by vitest 4.x, also a major.
+- **`sharp`/`libvips` (high) has no fix available.** It arrives via
+  `@huggingface/transformers` and is not on the user-upload path — screening images are
+  base64-encoded straight to Gemini and never handed to sharp.
+- **`postcss` (high)** is build-time only, via Next. **`adm-zip`/`onnxruntime-node`** are
+  reached only when loading model weights, not from user input.
+
+Run `npm audit` before any deployment; do not treat the raw count as the risk.
 
 ---
 
@@ -519,16 +351,14 @@ Stated plainly because they matter for interpreting output:
 
 - **Reversal-heavy writing** (`dof` for `dog`) is only recoverable from context, and the
   correction model is inconsistent on it. This is the weakest area.
-- **Dialect and non-rhotic spellings** are read literally — `pak` is a phonetically
-  correct spelling of `pack`, not `park`.
+- **Dialect and non-rhotic spellings** are read literally — `pak` is a phonetically correct
+  spelling of `pack`, not `park`.
 - **One sample is one data point.** A profile describes a single writing sample, not a
   person. Several samples across occasions are needed before a pattern is real.
 - **The assistant is only as good as what you ingest.** It cannot answer beyond the
-  uploaded corpus, by design. That is a feature for safety and a limit on usefulness.
-- **A screening carries no student reference.** Results attach to the signed-in
-  educator, not to an identified learner, so they cannot yet be grouped per student.
-
----
+  uploaded corpus, by design.
+- **A screening carries no student reference.** Results attach to the signed-in educator,
+  not to an identified learner, so they cannot yet be grouped per student.
 
 ## Still to do
 
@@ -537,6 +367,10 @@ Stated plainly because they matter for interpreting output:
 - Dashboard aggregating error trends across samples per learner (PS4 deliverable)
 - Material **download** — ingestion discards the source file after chunking, so there is
   nothing to serve back (see `tests/README.md`, note 5)
-- Frontend component tests (`PasswordField`, `ErrorAnalysis`), E2E (Cypress) and a
-  fuzzer (`fast-check`)
+- Frontend component tests (`PasswordField`, `ErrorAnalysis`), E2E (Cypress) and a fuzzer
+  (`fast-check`)
 - PDF export of a report for referral to an assessor
+- **Security work, in priority order** (see *Security → Known gaps* and the
+  [pre-deploy checklist](WORKFLOW.md#pre-deploy-checklist)): upgrade Next past the 21 open
+  advisories, rate-limit the two LLM endpoints, cap the chat question length, add security
+  headers, and stop returning raw `err.message` to the client
