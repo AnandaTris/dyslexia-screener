@@ -9,6 +9,35 @@ previous handoff's "uncommitted" list was stale.
 
 ## Read this first (session 7)
 
+### ONE ACTION BLOCKS EVERYTHING: run `supabase/students.sql`
+
+Per-student records are **fully implemented and committed** (`9be1ae9`, `c5d05a4`,
+`5b5861f`, `230a7e9`) but the schema behind them **has not been applied**. Until it is,
+`/students`, the screener and `/journey` will all fail against the live database — the
+code writes `student_id` to columns that do not exist yet.
+
+Paste `supabase/students.sql` into the Supabase dashboard SQL Editor and run it. It
+creates `students`, adds `student_id` to three tables, backfills existing rows into an
+`Unassigned` student per therapist, re-keys `learner_profiles` to `PK(student_id)`, and
+updates RLS. Order inside the file matters — do not reorder it.
+
+Verify after running:
+
+```bash
+cd rag-service && ./.venv/Scripts/python.exe -c "
+import sys; sys.path.insert(0,'.')
+from app.config import get_settings
+from supabase import create_client
+s=get_settings(); c=create_client(s.supabase_url, s.supabase_service_role_key)
+print('students', c.table('students').select('id',count='exact').execute().count)
+print('screenings missing student', len([r for r in c.table('screenings').select('student_id').execute().data if not r['student_id']]))
+"
+```
+
+Expected: `students` >= 1 (there were 3 therapists with rows), `screenings missing
+student` = 0.
+
+
 **The RAG pipeline now works end to end.** The corpus is no longer empty: four
 taxonomy-derived documents (5 chunks) are ingested, grounded chat returns real answers
 with citations, and `/journey` builds an 8-step cited plan. The session-6 headline action
@@ -52,7 +81,57 @@ generation are all verified working. Nothing is known-broken; the open issue is 
 
 ---
 
-## Done this session (session 7)
+## Done this session (session 7) — part 2: per-student records
+
+Spec: `docs/superpowers/specs/2026-08-06-per-student-records-design.md`.
+Plan: `docs/superpowers/plans/2026-08-06-per-student-records.md`. Both gitignored.
+
+**The problem.** `learner_profiles.user_id` was the PRIMARY KEY, so a therapist account
+held exactly one profile and every new screening overwrote the previous student's. A
+per-student journey was impossible without per-student profiles, which was impossible
+without per-student screenings — the whole cascade was forced.
+
+| Commit | What |
+|---|---|
+| `9be1ae9` | `supabase/students.sql`, `lib/students.js`, `createStudent` action |
+| `c5d05a4` | journeys scoped to a student, `/journey` redirects to `/students` |
+| `5b5861f` | screenings and profiles filed against a student, age prefill |
+| `230a7e9` | `/students` and `/students/[id]` pages, dashboard card, CSS |
+
+### Measured
+
+| What | Result |
+|---|---|
+| JS suite | **217 passed, 31 files** (was 190/29) |
+| Python suite | **52 passed, 1 skipped** — untouched by this work |
+| `npx next build` | **compiles**, `/students` and `/students/[id]` in the route table |
+| Live schema | **NOT applied** — see *Read this first* |
+
+### Decisions worth keeping
+
+- **Tags follow reality, not naming.** Documents and profiles use `phonological` /
+  `surface` / `visual_spatial` — what `lib/profile.js` emits — never `taxonomy.js`'s
+  `visual` or `morphological`.
+- **`student_id` is nullable** so the 15 existing screenings survived; the UI requires it
+  for anything new.
+- **RLS gained a student-ownership clause.** Without it a therapist could attach a
+  screening to another therapist's student id: `user_id` would still be their own, so the
+  old policy alone would have allowed it.
+- **The dashboard's profile lookup was removed, not fixed.** It used
+  `.eq("user_id", …).maybeSingle()`, which matches several rows as soon as a therapist has
+  a second student.
+- **No delete-student UI.** Deleting cascades away their screenings and journey; the SQL
+  exists, a one-click version does not.
+
+### Not done
+
+- Chat is still therapist-level; `error_analyses` still has no `student_id`.
+- Nothing has been exercised in a signed-in browser — everything above is unit tests plus
+  a successful build.
+
+---
+
+## Done this session (session 7) — part 1: RAG corpus
 
 Seeded the RAG corpus. Design spec:
 `docs/superpowers/specs/2026-08-06-rag-corpus-seed-design.md` (gitignored, working tree

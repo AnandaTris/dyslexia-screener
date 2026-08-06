@@ -92,7 +92,18 @@ retrieval. Delete the `documents` row before re-ingesting a revised file.
 
 ## Using it
 
-**`/` — the screener (PS1).** Drag in a photo or a PDF of handwriting. Gemini transcribes
+**`/students` — your caseload.** Add a student with a name and, optionally, a year of
+birth. Each student keeps their own screening history, derived profile and learning
+journey. `/students/[id]` is that student's page.
+
+A student is identified by which URL you are on, not by a hidden "current student"
+selector. That is deliberate: filing a screening against the wrong child is the worst
+mistake this app can make, and a cookie-held selection goes stale in a second tab.
+
+The year of birth is used only to prefill the writer's age on the screener, which drives
+the under-seven reversal guard described below.
+
+**`/` — the screener (PS1).** Pick the student, then drag in a photo or a PDF of handwriting. Gemini transcribes
 it and screens it for visible indicators (reversals, spacing, letter sizing). A PDF may
 run to several pages; all of them are read. Uploads are capped at 8 MB, because the file
 is base64-encoded into the API request and the whole request has to stay under the
@@ -256,8 +267,11 @@ app/
   analysis/page.jsx            PS4 analyser: text input, error report
   dashboard/page.jsx           post-login hub: screener, journey, profile, assistant
   dashboard/ChatAssistant.jsx  client chat UI with citations and offline state
-  journey/page.jsx             PS3 journey, server-rendered first paint
-  journey/JourneyBoard.jsx     build, tick off steps, progress bar
+  students/page.jsx            caseload list + add-student form
+  students/[id]/page.jsx       one student: profile, screenings, journey
+  students/actions.js          createStudent server action
+  journey/page.jsx             redirects to /students
+  journey/JourneyBoard.jsx     build, tick off steps, progress bar (per student)
   layout.jsx                   fonts, metadata
   globals.css                  design system (exercise-book motif)
   login/, signup/              auth pages and server actions
@@ -272,6 +286,7 @@ app/
     journey/step/route.js      PS3: PATCH a step's status
 
 lib/
+  students.js                  therapist-scoped student reads + age from birth year
   profile.js                   screening indicators → dyslexia profile emphasis
   ragService.js                server-only client for the Python service
   journey.js                   active-journey read + completion maths
@@ -306,7 +321,7 @@ tests/
 middleware.js                  session refresh + auth redirects
 scripts/warm-nlp.mjs           model warm-up and smoke test
 vitest.config.mjs              test runner configuration
-supabase/*.sql                 database schema (screenings, error_analyses, RAG)
+supabase/*.sql                 database schema (screenings, error_analyses, RAG, students)
 docs/NLP_ARCHITECTURE.md       full PS4 write-up
 docs/PROJECT_BRIEF.md          course handout + problem statements
 ```
@@ -404,14 +419,16 @@ Stated plainly because they matter for interpreting output:
   76 s on the first call after Ollama starts. `/journey` measured 76–122 s, which straddles
   the 120 s default in `lib/ragService.js` — on a slow run the browser reports a timeout
   for a request that actually succeeded. Raise `RAG_SERVICE_TIMEOUT_MS` if you hit it.
-- **A screening carries no student reference.** Results attach to the signed-in educator,
-  not to an identified learner, so they cannot yet be grouped per student.
+- **The assistant is not per-student.** Screenings, profiles and journeys belong to a
+  student, but the chat panel on `/dashboard` is still therapist-level — one conversation
+  for the whole caseload, not one per student.
 
 ## Still to do
 
-- Per-student records, so screenings and journeys group by learner rather than by the
-  signed-in educator
 - Dashboard aggregating error trends across samples per learner (PS4 deliverable)
+- Deleting or archiving a student — there is deliberately no delete UI, because removing a
+  student cascades away their screenings and journey
+- Per-student chat, and attaching `error_analyses` to a student the way screenings now are
 - Material **download** — ingestion discards the source file after chunking, so there is
   nothing to serve back (see `tests/README.md`, note 5)
 - Frontend component tests (`PasswordField`, `ErrorAnalysis`) and a fuzzer (`fast-check`).
