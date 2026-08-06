@@ -136,11 +136,21 @@ export function createFakeSupabase({
 
   // The screening route upserts a derived learner profile alongside the
   // screening insert. Recorded on its own list so a test can tell the two
-  // writes apart; `onConflict` is accepted and ignored, since nothing here
-  // needs to model a real unique constraint.
-  function recordUpsert(table, row) {
+  // writes apart.
+  //
+  // `onConflict` is honoured rather than ignored, because the whole point of
+  // per-student records is which column that key is. If the double just
+  // appended, a per-therapist upsert and a per-student one would look identical
+  // in the stored rows, and the regression this feature exists to prevent —
+  // screening a second student wiping the first one's profile — would pass
+  // either way.
+  function recordUpsert(table, row, options = {}) {
     upserts.push({ table, row });
-    (tables[table] ??= []).push(row);
+    const rows = (tables[table] ??= []);
+    const key = options?.onConflict;
+    const clash = key ? rows.findIndex((existing) => existing[key] === row[key]) : -1;
+    if (clash >= 0) rows[clash] = row;
+    else rows.push(row);
     return { data: null, error: insertError };
   }
 
@@ -234,8 +244,8 @@ export function createFakeSupabase({
         insert(row) {
           return Promise.resolve(recordInsert(table, row));
         },
-        upsert(row) {
-          return Promise.resolve(recordUpsert(table, row));
+        upsert(row, options) {
+          return Promise.resolve(recordUpsert(table, row, options));
         },
         select() {
           return builder;
