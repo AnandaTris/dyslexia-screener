@@ -1,0 +1,55 @@
+The phonological pattern
+
+WHAT THIS PATTERN MEANS
+
+Your errors mostly did not keep the sounds of the word you meant. When the spelling is read
+back, it does not give the target word.
+
+This is the signature associated with difficulty holding the map between sounds and
+letters. It is about sound processing. It is not about intelligence, and it is not about
+effort.
+
+WHAT IT LOOKS LIKE IN WRITING
+
+Consonant clusters get reduced. "street" becomes "sret" - the str cluster loses a sound.
+
+Vowels drop out of syllables. "letter" becomes "lettr".
+
+Whole syllables go missing. "family" becomes "famly".
+
+Sounds get replaced by unrelated sounds, so the written word cannot be read back as the one
+you meant.
+
+Neighbouring letters may also swap places, as in "gril" for "girl". In this screener a swap
+of that kind counts towards this pattern.
+
+WHAT HELPS
+
+The practice that suits this pattern is structured, explicit phonics. Work on the sounds
+first and the letters second.
+
+Phoneme segmentation. Take a spoken word and break it into its separate sounds. Say
+"street" as s-t-r-ee-t. Count the sounds on your fingers before you write anything down.
+
+Blending. The reverse of segmentation. Hear separate sounds and push them together into a
+word. Start with three sounds, then four, then move to clusters.
+
+Grapheme-phoneme correspondence drills. Work on one sound-to-letter mapping at a time until
+it is automatic, rather than learning whole words by sight.
+
+Multisensory work on consonant clusters. Say the sounds, tap them out, build them with
+letter tiles, then write them. Using more than one sense at once gives the mapping more
+than one route to stick.
+
+Vowels inside syllables. Take a word, break it into syllables, and check that every
+syllable has a vowel actually written in it. This catches the "lettr" error directly.
+
+HOW TO PRACTISE
+
+Work in short sessions, often, rather than long sessions rarely.
+
+Say every word aloud before you write it.
+
+When you get a word wrong, do not just correct the letters. Say the word slowly, break it
+into its sounds, then write it again from the sounds. Correcting the spelling without
+rebuilding the sounds practises the wrong thing.
