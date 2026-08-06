@@ -320,6 +320,19 @@ subprocess.run(["npx.cmd", "vitest", "run", "e2e-live.test.js"], env=env, cwd=RE
 Ollama and uvicorn on :8000 must both be up first. Note `npm test` includes this file, so
 a plain `npm test` with no token shows 2 failures that are not real.
 
+**Start both services from your own terminal, not from an agent session.** Backgrounded
+processes started by the assistant are killed when its turn ends — observed twice in
+session 7 — so anything depending on them has to run inside that same turn. Two terminals:
+
+```bash
+ollama serve
+
+cd rag-service && .venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+The corpus itself is unaffected by this: it lives in Supabase, so the 4 documents and 5
+chunks persist across restarts.
+
 ### Open design question, parked
 
 The user asked for the no-material reply to refer the learner to **a human coach**
