@@ -73,6 +73,21 @@ Apply the database schema and open <http://localhost:3000>. The chat and journey
 will say the assistant is offline until you also run the Python service — everything else
 works. **Full instructions: [`WORKFLOW.md`](WORKFLOW.md).**
 
+To use the assistant you also need Ollama running and a corpus ingested. A starter corpus
+ships in [`rag-service/corpus/`](rag-service/corpus); load it once:
+
+```bash
+cd rag-service
+.venv/Scripts/python.exe scripts/ingest_file.py corpus/understanding-your-results.txt \
+    --title "Understanding your screening results" --doc-type guide
+.venv/Scripts/python.exe scripts/ingest_file.py corpus/surface-pattern.txt \
+    --title "The surface pattern" --doc-type guide --profiles surface
+# ...and the phonological and visual-spatial files, tagged to match
+```
+
+Ingestion is **not idempotent** — running it twice duplicates the document and skews
+retrieval. Delete the `documents` row before re-ingesting a revised file.
+
 ---
 
 ## Using it
@@ -144,6 +159,30 @@ rests on was measured, not guessed — the numbers are in the orchestration doc.
 
 **The assistant is only as good as what you ingest.** It cannot answer beyond the uploaded
 corpus, by design. That is a feature for safety and a limit on usefulness.
+
+### The starter corpus
+
+[`rag-service/corpus/`](rag-service/corpus) holds four learner-facing guides, and every
+claim in them is derived from this repo's own `lib/nlp/taxonomy.js` and `lib/profile.js`
+rather than from a model's general knowledge — so the assistant's answers stay consistent
+with what the analyser tells the same user, and each claim can be checked against a file.
+
+| File | Tagged for | Reaches |
+|---|---|---|
+| `understanding-your-results.txt` | *(untagged)* | every learner |
+| `phonological-pattern.txt` | `phonological` | phonological emphasis |
+| `surface-pattern.txt` | `surface` | surface emphasis |
+| `visual-spatial-pattern.txt` | `visual_spatial` | visual-spatial emphasis |
+
+An untagged document is eligible for everyone — `match_document_chunks` admits any
+document whose `target_profiles` is empty. That is deliberately how the general material
+stays reachable no matter which emphasis a learner has.
+
+Tags must match what `lib/profile.js` actually emits (`phonological`, `surface`,
+`visual_spatial`). `taxonomy.js` also names `visual` and `morphological`, but the profile
+deriver never returns those, so a document tagged with one would match no learner — and it
+would fail **silently**, retrieving nothing with no error anywhere. Morphology content
+therefore lives in the untagged file.
 
 ## How the NLP works (short version)
 
@@ -253,6 +292,7 @@ rag-service/                   Python FastAPI service (PS3) — see RAG_ORCHESTR
     ingest.py                  ingestion pipeline
     retrieval.py               profile-filtered similarity search
     generation.py              grounded generation + citation resolution
+  corpus/                      starter corpus, derived from lib/nlp/taxonomy.js
   scripts/ingest_file.py       CLI to load a .txt/.pdf source
   scripts/check_schema.py      reports which parts of rag_schema.sql are live
   tests/                       pytest suite
@@ -316,7 +356,7 @@ Recorded honestly — these are real and currently unmitigated. The
 
 | Gap | Impact |
 |---|---|
-| **No rate limiting on any endpoint** | `/api/chat` and `/api/journey` each trigger a local CPU-bound LLM (measured 7–35 s per call). Any signed-in user can saturate the machine. `/api/analyze` spends paid Gemini quota per call. |
+| **No rate limiting on any endpoint** | `/api/chat` and `/api/journey` each trigger a local CPU-bound LLM. Measured on this hardware with the starter corpus: chat **16 s** warm and **76 s** on the first call after Ollama starts; journey **76–122 s**. Any signed-in user can saturate the machine. `/api/analyze` spends paid Gemini quota per call. |
 | **`/api/chat` does not bound question length** | Its sibling `/api/analyze-text` caps at 20,000 chars; chat accepts any string, forwards it to the model and stores it. |
 | **No security headers** | `next.config.mjs` defines no `headers()`, so there is no CSP, `frame-ancestors`/X-Frame-Options, HSTS, `X-Content-Type-Options` or `Referrer-Policy`. The authenticated dashboard is framable. |
 | **Raw error text reaches the client** | `app/api/analyze/route.js` returns `err.message` from any unexpected throw, and the raw model output when JSON parsing fails. |
@@ -356,7 +396,14 @@ Stated plainly because they matter for interpreting output:
 - **One sample is one data point.** A profile describes a single writing sample, not a
   person. Several samples across occasions are needed before a pattern is real.
 - **The assistant is only as good as what you ingest.** It cannot answer beyond the
-  uploaded corpus, by design.
+  uploaded corpus, by design. The starter corpus is deliberately narrow — it explains the
+  screener's own error categories and the practice that suits each pattern, and nothing
+  else. Ask it something outside that and it will correctly say it has no material.
+- **Answers are slow on CPU-only hardware.** Grounded answers feed the retrieved excerpts
+  into the local model, so they cost far more than an ungrounded one: measured 16 s warm,
+  76 s on the first call after Ollama starts. `/journey` measured 76–122 s, which straddles
+  the 120 s default in `lib/ragService.js` — on a slow run the browser reports a timeout
+  for a request that actually succeeded. Raise `RAG_SERVICE_TIMEOUT_MS` if you hit it.
 - **A screening carries no student reference.** Results attach to the signed-in educator,
   not to an identified learner, so they cannot yet be grouped per student.
 
@@ -367,8 +414,12 @@ Stated plainly because they matter for interpreting output:
 - Dashboard aggregating error trends across samples per learner (PS4 deliverable)
 - Material **download** — ingestion discards the source file after chunking, so there is
   nothing to serve back (see `tests/README.md`, note 5)
-- Frontend component tests (`PasswordField`, `ErrorAnalysis`), E2E (Cypress) and a fuzzer
-  (`fast-check`)
+- Frontend component tests (`PasswordField`, `ErrorAnalysis`) and a fuzzer (`fast-check`).
+  A live end-to-end harness already exists — `e2e-live.test.js` drives the real
+  `lib/ragService.js` against a running service and covers the grounded answer, the
+  journey, and the bad-token / unreachable / timeout / missing-config paths (6 tests). It
+  needs `E2E_SERVICE_TOKEN` set, or every authenticated call returns 401. What is still
+  missing is *browser* E2E
 - PDF export of a report for referral to an assessor
 - **Security work, in priority order** (see *Security → Known gaps* and the
   [pre-deploy checklist](WORKFLOW.md#pre-deploy-checklist)): upgrade Next past the 21 open

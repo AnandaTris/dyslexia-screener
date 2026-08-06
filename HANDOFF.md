@@ -16,10 +16,10 @@ is done.
 
 **The one new problem is latency, and it is measured, not suspected:**
 
-- Grounded `/chat` takes **~76 s** per answer. Under the 120 s timeout, so it works.
-- `/journey` took **121.8 s** — **over** the 120 s `DEFAULT_TIMEOUT_MS` in
-  `lib/ragService.js:13`. In the browser, "Build my journey" will show the timeout
-  message even though the service answered correctly.
+- Grounded `/chat`: **75.5 s** cold, **16.1 s** warm. Comfortably under the budget.
+- `/journey`: **121.8 s** cold, **76.0 s** warm — it **straddles** the 120 s
+  `DEFAULT_TIMEOUT_MS` in `lib/ragService.js:13`. On a cold run the browser shows the
+  timeout message even though the service answered correctly. Intermittent, not constant.
 
 The session-6 figure of "3.89 / 4.71 / 5.32 s" was the **plain** path, which sends no
 excerpts. Grounded mode feeds ~6,600 chars of retrieved context into a 3B model on CPU,
@@ -43,8 +43,9 @@ Every row below was run in this session; the result is what the command actually
 | `documents` | `scripts/check_schema.py` | **4 rows** |
 | `document_chunks` | `scripts/check_schema.py` | **5 rows** |
 | `learner_profiles` | direct select | **1 row**, `primary_label: surface` |
-| Grounded chat | `POST /chat` ×2 | **answers with citations**, 75.5 s / 75.9 s |
-| Journey | `POST /journey` (surface) | **8 steps, every one cited**, 121.8 s |
+| Grounded chat | `POST /chat` ×2 | **answers with citations**, 75.5 s / 75.9 s (cold) |
+| Journey | `POST /journey` (surface) | **8 steps, every one cited**, 121.8 s (cold) |
+| Live E2E | `e2e-live.test.js` with `E2E_SERVICE_TOKEN` | **6/6 passed** (93.8 s); chat 16.1 s, journey 76.0 s warm |
 
 Both suites, the web app, auth, screener, analyser, NLP pipeline, Ollama, retrieval and
 generation are all verified working. Nothing is known-broken; the open issue is speed.
@@ -98,6 +99,39 @@ only).
   re-checking if the corpus grows.
 - **Grounded latency is context-bound, not model-bound.** Same model, same machine: plain
   ~4-5 s (session 6), grounded ~76 s with ~6,600 chars of excerpts.
+
+### End-to-end run, and session 6's undiagnosed failure explained
+
+`e2e-live.test.js` — **6/6 passed** (93.8 s) against a live service. It drives the real
+`lib/ragService.js`, which is the exact path `app/api/chat/route.js` uses.
+
+| Test | Result |
+|---|---|
+| returns a grounded answer with citations | **pass**, 16.1 s — cited *The phonological pattern* |
+| builds a journey | **pass**, 76.0 s |
+| reports a bad token as an error, not as offline | **pass** |
+| reports an unreachable service as offline | **pass** |
+| reports a blown time budget as a timeout, not as offline | **pass** |
+| reports missing configuration as offline | **pass** |
+
+**Session 6's undiagnosed `builds a journey` failure (`r.ok === false`) was a missing
+`E2E_SERVICE_TOKEN`, not a defect.** `e2e-live.test.js:8` reads it, and when it is unset
+`process.env.RAG_SERVICE_TOKEN = undefined` stores the *string* `"undefined"` — which is
+truthy, so it slips past the `!token` guard at `lib/ragService.js:18` and the service
+answers 401. That also explains why the sibling `bad token` test passed while the two
+authenticated tests failed. Run it with the token injected from `rag-service/.env`; never
+put it on a command line.
+
+### Latency is highly variable — do not quote a single number
+
+| Call | Cold (first after Ollama starts) | Warm |
+|---|---|---|
+| Grounded `/chat` | **75.5 s** | **16.1 s** |
+| `/journey` | **121.8 s** | **76.0 s** |
+
+So `/journey` **straddles** the 120 s `DEFAULT_TIMEOUT_MS` rather than always exceeding it.
+Raising `RAG_SERVICE_TIMEOUT_MS` is still the right call — a timeout here reports failure
+for a request that succeeded — but the earlier "always over budget" reading was too strong.
 
 ### Deliberately not fixed: two profile-vocabulary mismatches
 
@@ -262,10 +296,29 @@ No commits yet — everything below is in the working tree.
    line. Then `/journey` → "Build my journey" → expect the 8 cited steps. Both need
    Ollama and the RAG service running, and step 3 done first or the journey will appear
    to fail.
-5. **Decide whether ~76 s per grounded answer is acceptable.** It is under the timeout but
-   it is a long wait with no streaming. Options, none of them attempted: stream tokens,
-   cut `RETRIEVAL_K` to shrink the prompt, or accept it as the cost of local inference on
-   this hardware.
+5. **Consider raising `DEFAULT_TIMEOUT_MS`** in `lib/ragService.js:13` from 120000, rather
+   than relying on every deployment setting the env var. Measured, a cold `/journey`
+   exceeds the current default. Not changed here — it is a code change nobody asked for,
+   and `lib/ragService.test.js` may assert the current value.
+6. **Decide whether the wait is acceptable.** Warm chat is 16 s, cold is 76 s, and there is
+   no streaming, so the UI is silent throughout. Options, none attempted: stream tokens,
+   cut `RETRIEVAL_K` to shrink the prompt, keep the model warm with a periodic ping, or
+   accept it as the cost of local inference on this hardware.
+
+### How to re-run the live E2E
+
+It needs a valid token or every authenticated call 401s. Do not put the token on a command
+line — read it from `rag-service/.env` inside the runner:
+
+```python
+sys.path.insert(0, "rag-service")
+from app.config import get_settings
+env["E2E_SERVICE_TOKEN"] = get_settings().service_token
+subprocess.run(["npx.cmd", "vitest", "run", "e2e-live.test.js"], env=env, cwd=REPO)
+```
+
+Ollama and uvicorn on :8000 must both be up first. Note `npm test` includes this file, so
+a plain `npm test` with no token shows 2 failures that are not real.
 
 ### Open design question, parked
 
@@ -308,13 +361,12 @@ and the corpus is seeded (session 7), each verified by running the check.
 
 Three soft ones:
 
-- **`/journey` exceeds the client timeout.** Measured 121.8 s against a 120 s default, so
-  the browser reports a timeout on a request that succeeded. One env line fixes it —
-  step 3 of *Next steps*. This is the only thing standing between the current state and a
-  working browser demo.
-- **Grounded answers take ~76 s.** Real, measured, and not a defect — it is a 3B model
-  doing CPU-only prompt evaluation over ~6,600 chars of retrieved context. Under the
-  timeout once step 3 is done, but a long silent wait.
+- **`/journey` intermittently exceeds the client timeout.** Measured 121.8 s cold and
+  76.0 s warm against a 120 s default, so a cold run reports a timeout on a request that
+  succeeded. One env line fixes it — step 3 of *Next steps*.
+- **Grounded answers are slow on a cold model.** 75.5 s for the first call after Ollama
+  starts, 16.1 s warm. Not a defect — a 3B model doing CPU-only prompt evaluation over
+  ~6,600 chars of retrieved context. The cold figure is mostly model load.
 - **`chat_messages.mode` is not applied**, by choice, so mode badges do not survive a
   reload. The two-line SQL and the three code changes are written out under *Deliberately
   not done* above.
