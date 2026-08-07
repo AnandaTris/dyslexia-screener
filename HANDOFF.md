@@ -422,6 +422,21 @@ No commits yet — everything below is in the working tree.
 
 ## In progress / next steps
 
+0. **Student login + role separation — design written, nothing built.** Spec:
+   `docs/superpowers/specs/2026-08-07-student-login-roles-design.md` (gitignored, working
+   tree only). Brainstormed 2026-08-07; every decision in its table was chosen by the user.
+   Headline: students get an account created by the therapist via the admin API with the
+   initial password `123456`, see only `/my-journey`, and can tick steps; the screener,
+   analyser, caseload and chat stay therapist-only. Role lives in the JWT `app_metadata`
+   claim, RLS scopes data through a new `students.auth_user_id` column. **No code, SQL or
+   database change has been made** — the next action is the user's review of the spec,
+   then `superpowers:writing-plans`. Note it needs `SUPABASE_SERVICE_ROLE_KEY` in the root
+   `.env`, which the Next app does not currently have.
+
+   Plan: `docs/superpowers/plans/2026-08-07-student-login-roles.md` — 12 TDD tasks, also
+   gitignored. Task 1 is gated on the user pasting `supabase/student_accounts.sql` into the
+   dashboard SQL Editor; tasks 2-11 have mocked tests and do not need the database.
+
 1. ~~**Apply the RAG schema.**~~ **Done** (session 6).
 2. ~~**Ingest at least one document.**~~ **Done** (session 7) — 4 documents, 5 chunks,
    verified by live `/chat` and `/journey` calls.
