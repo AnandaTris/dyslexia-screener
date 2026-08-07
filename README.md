@@ -66,7 +66,7 @@ generation model run locally through Ollama. Gemini is used for PS1 vision only.
 npm install
 cp .env.example .env           # then fill in your keys
 npm run warm:nlp               # one-time, ~1 min: downloads and caches the NLP model
-npm run dev
+npm run dev:all
 ```
 
 Apply the database schema and open <http://localhost:3000>. The chat and journey pages

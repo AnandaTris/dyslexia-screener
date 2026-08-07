@@ -57,3 +57,8 @@ Desktop.ini
 /.superpowers
 /.gstack
 /docs/superpowers
+# The session progress file. Same species as the specs and plans above: it is a
+# running note between sessions, not a repo artifact, and it churns on every
+# session in a way that adds noise to every diff. It stays in the working tree —
+# untracked means it is yours alone, and a fresh clone will not have it.
+/HANDOFF.md
