@@ -71,7 +71,7 @@ started from `rag-service/`. `npm run dev:rag` already does this.
 
 ### 3. Database
 
-Supabase dashboard → **SQL Editor** → **New query**, run these in order. All three are
+Supabase dashboard → **SQL Editor** → **New query**, run these **in order**. All four are
 safe to re-run.
 
 | # | File | Creates |
@@ -79,6 +79,19 @@ safe to re-run.
 | 1 | `supabase/schema.sql` | `screenings` (PS1) |
 | 2 | `supabase/error_analyses.sql` | `error_analyses` (PS4) |
 | 3 | `supabase/rag_schema.sql` | pgvector, the six RAG tables, RLS, and `match_document_chunks` (PS3) |
+| 4 | `supabase/students.sql` | `students`, `student_id` on three tables, the backfill, and the `learner_profiles` re-key |
+
+**4 must come last.** It re-parents tables that 1 and 3 create, and it backfills whatever
+rows already exist, so running it against a project that has not had the others applied
+will do the wrong thing.
+
+Unlike the others, **4 runs inside a transaction** — if any statement fails, the whole
+migration rolls back and the database is untouched. It ends with a verification query;
+expect `students` ≥ 1 and both `*_without_student` columns to be `0`.
+
+It contains the one irreversible change in the project: `learner_profiles`'s primary key
+moves from `user_id` to `student_id`. That is what allows a therapist to hold more than
+one profile. Going back means restoring from a Supabase backup.
 
 Then confirm they actually landed:
 

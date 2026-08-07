@@ -1,4 +1,9 @@
-"""Report which parts of supabase/rag_schema.sql are live in this project.
+"""Report which parts of the Supabase schema are live in this project.
+
+Covers supabase/rag_schema.sql (the RAG store and the journey tables) and
+supabase/students.sql (per-student records). Each failure names the file that
+fixes it, because "a table is missing" is useless without knowing which script
+creates it.
 
 Reads rag-service/.env through app.config, so run it from rag-service/:
 
@@ -26,6 +31,15 @@ TABLES = [
     "journeys",
     "journey_steps",
     "chat_messages",
+]
+
+# What students.sql adds. The columns matter as much as the table: the app writes
+# student_id to all three, and a missing column fails at request time with a
+# PostgREST error rather than anywhere obvious.
+STUDENT_COLUMNS = [
+    ("screenings", "student_id"),
+    ("journeys", "student_id"),
+    ("learner_profiles", "student_id"),
 ]
 
 
@@ -92,13 +106,56 @@ def main() -> int:
         failures.append("match_document_chunks")
         print(f"  MISSING  match_document_chunks  {_reason(exc)}")
 
+    # ---- Per-student records (supabase/students.sql) ----
+    student_failures = []
+
+    print("\nPer-student records:")
+    try:
+        res = client.table("students").select("*", count="exact").limit(0).execute()
+        print(f"  OK       {'students':<18} {res.count} rows")
+    except Exception as exc:  # noqa: BLE001
+        student_failures.append("students")
+        print(f"  MISSING  {'students':<18} {_reason(exc)}")
+
+    for table, column in STUDENT_COLUMNS:
+        label = f"{table}.{column}"
+        try:
+            client.table(table).select(column).limit(1).execute()
+            print(f"  OK       {label:<28}")
+        except Exception as exc:  # noqa: BLE001
+            student_failures.append(label)
+            print(f"  MISSING  {label:<28} {_reason(exc)}")
+
+    # A backfill that half-ran is its own failure mode: the columns exist, so the
+    # app starts, but old rows belong to no student and vanish from every view.
+    if not student_failures:
+        try:
+            rows = client.table("screenings").select("student_id").execute().data or []
+            orphans = [r for r in rows if not r.get("student_id")]
+            if orphans:
+                student_failures.append("backfill")
+                print(f"  PARTIAL  {len(orphans)} screening(s) still have no student_id")
+            else:
+                print(f"  OK       backfill: all {len(rows)} screening(s) have a student")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ?        could not check the backfill  {_reason(exc)}")
+
     if failures:
-        print(f"\n{len(failures)} missing: {', '.join(failures)}")
+        print(f"\n{len(failures)} missing from rag_schema.sql: {', '.join(failures)}")
         print("Apply supabase/rag_schema.sql in the Supabase dashboard:")
         print("  SQL Editor -> New query -> paste the file -> Run. It is safe to re-run.")
+
+    if student_failures:
+        print(f"\n{len(student_failures)} missing from students.sql: {', '.join(student_failures)}")
+        print("Apply supabase/students.sql in the Supabase dashboard:")
+        print("  SQL Editor -> New query -> paste the file -> Run.")
+        print("  It runs in a transaction, so a failure changes nothing.")
+        print("  Run it AFTER rag_schema.sql - it re-parents tables that file creates.")
+
+    if failures or student_failures:
         return 1
 
-    print("\nSchema is fully applied.")
+    print("\nSchema is fully applied, per-student records included.")
     return 0
 
 
