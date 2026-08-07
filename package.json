@@ -13,10 +13,12 @@
     "start": "next start",
     "lint": "next lint",
     "warm:nlp": "node scripts/warm-nlp.mjs",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --exclude \"**/e2e-*.test.js\"",
+    "test:watch": "vitest --exclude \"**/e2e-*.test.js\"",
     "test:unit": "vitest run tests/unit",
-    "test:integration": "vitest run tests/integration"
+    "test:integration": "vitest run tests/integration",
+    "test:e2e": "vitest run e2e-students.test.js e2e-live.test.js",
+    "test:all": "vitest run"
   },
   "dependencies": {
     "@google/genai": "^1.9.0",

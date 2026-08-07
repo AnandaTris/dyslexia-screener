@@ -79,8 +79,16 @@ describe("E2E — per-student schema is live", () => {
   });
 
   it("has backfilled every existing screening onto a student", async () => {
-    const { data } = await supabase.from("screenings").select("student_id");
-    const orphans = (data ?? []).filter((row) => !row.student_id);
+    const { data, error } = await supabase.from("screenings").select("student_id");
+
+    // Assert the read worked BEFORE judging the rows. Without this the test
+    // passes vacuously when the column is missing: the query errors, `data` is
+    // null, and an empty list trivially has no orphans — so an unapplied
+    // migration would report a completed backfill.
+    expect(error, "could not read screenings.student_id. Run supabase/students.sql.").toBeNull();
+    expect(data, "screenings query returned no rows array").toBeInstanceOf(Array);
+
+    const orphans = data.filter((row) => !row.student_id);
     expect(orphans, "screenings left without a student after the backfill").toHaveLength(0);
   });
 });

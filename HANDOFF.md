@@ -64,8 +64,10 @@ Every row below was run in this session; the result is what the command actually
 
 | Component | Command | Result |
 |---|---|---|
-| JS test suite | `npx vitest run --exclude "**/e2e-live.test.js"` | **190 passed, 29 files** (9.4 s) |
-| Python test suite | `.venv/Scripts/python.exe -m pytest -q` | **52 passed, 1 skipped** (0.45 s) |
+| JS test suite | `npm test` | **224 passed, 32 files** — excludes e2e by design |
+| JS e2e | `npm run test:e2e` | **8 failed, 5 passed** — 7 from an unapplied schema, 1 from services being down |
+| Python test suite | `.venv/Scripts/python.exe -m pytest -q` | **52 passed, 1 skipped** (0.24 s) |
+| Next build | `npx next build` | **compiles**, `/students` and `/students/[id]` in the route table |
 | Ollama server | `GET http://127.0.0.1:11434/api/tags` | **HTTP 200** |
 | RAG service | `GET http://127.0.0.1:8000/health` | **`{"status":"ok"}`** |
 | Schema | `scripts/check_schema.py` | **fully applied**, all six tables + RPC |
@@ -78,6 +80,67 @@ Every row below was run in this session; the result is what the command actually
 
 Both suites, the web app, auth, screener, analyser, NLP pipeline, Ollama, retrieval and
 generation are all verified working. Nothing is known-broken; the open issue is speed.
+
+---
+
+## Done this session (session 7) — part 3: test layers and cleanup
+
+### `npm test` was left permanently red, and is now green
+
+Adding `e2e-students.test.js` broke the default suite: `"test": "vitest run"` picked up
+both e2e files, which need a live database and running services. A default suite that is
+always red is one nobody reads. Scripts are now split:
+
+| Script | Runs | Needs |
+|---|---|---|
+| `npm test` | unit + integration, **224 tests** | nothing |
+| `npm run test:e2e` | the two live suites, 13 tests | database + services |
+| `npm run test:all` | everything | database + services |
+
+`--exclude` on the CLI is additive to the config's `exclude`, verified by running it —
+`node_modules` is still excluded.
+
+### A test of mine was passing vacuously
+
+Found by reconciling numbers that did not add up: `e2e-live` alone was 2 failed / 4
+passed and `e2e-students` was 7 failed, but together they reported 8 failed / 5 passed.
+Nine minus eight is one test passing in the combined run that failed alone.
+
+The culprit:
+
+```js
+const { data } = await supabase.from("screenings").select("student_id");
+const orphans = (data ?? []).filter((row) => !row.student_id);
+expect(orphans).toHaveLength(0);   // passes when the column does not exist
+```
+
+The query errors, `data` is null, `?? []` swallows it, and an empty list trivially has no
+orphans — so it reported a completed backfill against a table with no such column. It now
+asserts `error` is null and `data` is an array **before** judging the rows. All 7 fail
+loudly again.
+
+Worth generalising: any assertion of the form "none of the rows are bad" passes when
+there are no rows. Check the read succeeded first.
+
+### Dead code removed
+
+`loadStudents` was referenced only by its own tests once `loadStudentSummaries`
+superseded it. Deleted with its 3 tests — hence 224 rather than 227.
+
+### Docs corrected
+
+`tests/README.md` claimed `npm test` runs everything (no longer true), that
+`tests/integration/` holds nothing but plan cases (`it5` is not one), that a screening
+carries no student reference (now closed), that `middleware.js` is untested (it has 7
+tests), and that pytest runs 35 tests (53).
+
+### The component-test gap is a decision, not a task
+
+`PasswordField`, `ErrorAnalysis`, `JourneyBoard` and `AddStudentForm` have no tests.
+`vitest.config.mjs` deliberately sets `environment: "node"`, reasoning that "a jsdom
+global would only hide an accidental browser dependency". Component tests need `jsdom`
+plus `@testing-library/react` — neither installed. Reversing a documented architectural
+choice and adding two dependencies should be your call, so it was left alone.
 
 ---
 
