@@ -42,6 +42,13 @@ STUDENT_COLUMNS = [
     ("learner_profiles", "student_id"),
 ]
 
+# What student_accounts.sql adds. Without these the login panel fails at request
+# time with a PostgREST "column does not exist", which reads like a code bug.
+ACCOUNT_COLUMNS = [
+    ("students", "auth_user_id"),
+    ("students", "login_email"),
+]
+
 
 def main() -> int:
     settings = get_settings()
@@ -126,6 +133,17 @@ def main() -> int:
             student_failures.append(label)
             print(f"  MISSING  {label:<28} {_reason(exc)}")
 
+    account_failures = []
+    print("\nStudent accounts:")
+    for table, column in ACCOUNT_COLUMNS:
+        label = f"{table}.{column}"
+        try:
+            client.table(table).select(column).limit(1).execute()
+            print(f"  OK       {label:<28}")
+        except Exception as exc:  # noqa: BLE001
+            account_failures.append(label)
+            print(f"  MISSING  {label:<28} {_reason(exc)}")
+
     # A backfill that half-ran is its own failure mode: the columns exist, so the
     # app starts, but old rows belong to no student and vanish from every view.
     if not student_failures:
@@ -152,7 +170,14 @@ def main() -> int:
         print("  It runs in a transaction, so a failure changes nothing.")
         print("  Run it AFTER rag_schema.sql - it re-parents tables that file creates.")
 
-    if failures or student_failures:
+    if account_failures:
+        print(f"\n{len(account_failures)} missing from student_accounts.sql: "
+              f"{', '.join(account_failures)}")
+        print("Apply supabase/student_accounts.sql in the Supabase dashboard:")
+        print("  SQL Editor -> New query -> paste the file -> Run.")
+        print("  Run it AFTER students.sql - it adds columns to the table that file creates.")
+
+    if failures or student_failures or account_failures:
         return 1
 
     print("\nSchema is fully applied, per-student records included.")
