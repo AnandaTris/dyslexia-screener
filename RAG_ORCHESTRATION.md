@@ -344,8 +344,15 @@ existed, a slow local model produced *"The learning assistant is offline. Start 
 RAG service"* while the service was running and mid-answer — pointing whoever read it at
 the one component that was not broken.
 
-The budget is `RAG_SERVICE_TIMEOUT_MS` (root `.env`, default 120000). It is deliberately
-generous because the model is local; on a machine with a real GPU 30000 is safe.
+The budget is `RAG_SERVICE_TIMEOUT_MS` (root `.env`, default **300000**). It is
+deliberately generous because the model is local; on a machine with a real GPU 30000 is
+safe.
+
+The default was 120000 until 2026-08-07, when a live end-to-end run failed at **120325 ms**
+— the service had answered correctly and the client gave up 325 ms too late. Measured on
+CPU-only hardware: grounded `/chat` 16-20 s warm but **118 s** on the first call after
+Ollama starts, and `/journey` 72-76 s warm, **121.8 s** cold. A limit the happy path lands
+on top of is the wrong limit.
 
 ---
 

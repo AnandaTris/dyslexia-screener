@@ -1,6 +1,7 @@
 # Project Handoff — Dyslexia Screener + RAG Learning Assistant
 
-**Last updated:** 2026-08-06 (session 7 — corpus seeded, RAG working end to end)
+**Last updated:** 2026-08-07 (session 7 — corpus seeded, per-student records live, every
+test layer green)
 **Branch:** `jer`. Last commit before this session: `0687146`. Session 6's work was all
 committed in `0687146` despite that commit's message ("docs: architecture update") — the
 previous handoff's "uncommitted" list was stale.
@@ -9,52 +10,50 @@ previous handoff's "uncommitted" list was stale.
 
 ## Read this first (session 7)
 
-### ONE ACTION BLOCKS EVERYTHING: run `supabase/students.sql`
+### No blockers. Every layer is green against the real database.
 
-Per-student records are **fully implemented and committed** (`9be1ae9`, `c5d05a4`,
-`5b5861f`, `230a7e9`) but the schema behind them **has not been applied**. Until it is,
-`/students`, the screener and `/journey` will all fail against the live database — the
-code writes `student_id` to columns that do not exist yet.
+`supabase/students.sql` was applied by the user on 2026-08-07 and verified:
 
-Paste `supabase/students.sql` into the Supabase dashboard SQL Editor and run it. It
-creates `students`, adds `student_id` to three tables, backfills existing rows into an
-`Unassigned` student per therapist, re-keys `learner_profiles` to `PK(student_id)`, and
-updates RLS. Order inside the file matters — do not reorder it.
+```
+Per-student records:
+  OK  students           3 rows
+  OK  screenings.student_id
+  OK  journeys.student_id
+  OK  learner_profiles.student_id
+  OK  backfill: all 15 screening(s) have a student
 
-Verify after running:
-
-```bash
-cd rag-service && ./.venv/Scripts/python.exe -c "
-import sys; sys.path.insert(0,'.')
-from app.config import get_settings
-from supabase import create_client
-s=get_settings(); c=create_client(s.supabase_url, s.supabase_service_role_key)
-print('students', c.table('students').select('id',count='exact').execute().count)
-print('screenings missing student', len([r for r in c.table('screenings').select('student_id').execute().data if not r['student_id']]))
-"
+Schema is fully applied, per-student records included.
 ```
 
-Expected: `students` >= 1 (there were 3 therapists with rows), `screenings missing
-student` = 0.
+Referential integrity checked separately: all 15 screenings and the 1 profile resolve to a
+real student owned by the **correct** therapist — nothing was attached to the wrong person.
+Three `Unassigned` students exist, one per therapist that already owned rows.
 
+| Layer | Result |
+|---|---|
+| `npm test` (unit + integration) | **224 passed, 32 files** |
+| `npm run test:e2e` | **13 passed** — 7 schema/round-trip, 6 JS↔Python |
+| `pytest -q` | **52 passed, 1 skipped** |
 
-**The RAG pipeline now works end to end.** The corpus is no longer empty: four
-taxonomy-derived documents (5 chunks) are ingested, grounded chat returns real answers
-with citations, and `/journey` builds an 8-step cited plan. The session-6 headline action
-is done.
+**The RAG pipeline works end to end.** Four taxonomy-derived documents (5 chunks) are
+ingested, grounded chat returns real answers with citations, `/journey` builds a cited
+plan, and every screening is now filed against a student.
 
-**The one new problem is latency, and it is measured, not suspected:**
+### The e2e run found a real product defect, since fixed
 
-- Grounded `/chat`: **75.5 s** cold, **16.1 s** warm. Comfortably under the budget.
-- `/journey`: **121.8 s** cold, **76.0 s** warm — it **straddles** the 120 s
-  `DEFAULT_TIMEOUT_MS` in `lib/ragService.js:13`. On a cold run the browser shows the
-  timeout message even though the service answered correctly. Intermittent, not constant.
+`builds a journey` failed at **120325 ms** against the 120 s `DEFAULT_TIMEOUT_MS` — the
+service answered correctly and the client gave up 325 ms too late. That is the marginal
+case earlier sessions predicted, caught live.
 
-The session-6 figure of "3.89 / 4.71 / 5.32 s" was the **plain** path, which sends no
-excerpts. Grounded mode feeds ~6,600 chars of retrieved context into a 3B model on CPU,
-and that is where the time goes. **Fix: set `RAG_SERVICE_TIMEOUT_MS=300000` in the root
-`.env`** (documented at `WORKFLOW.md:48`). Not done here — the root `.env` holds secrets
-and was left alone.
+`DEFAULT_TIMEOUT_MS` is now **300000** (`lib/ragService.js`). Measured on this hardware
+(Intel Iris Xe, CPU-only): grounded `/chat` **16-20 s** warm but **118 s** on the first
+call after Ollama starts; `/journey` **72-76 s** warm, **121.8 s** cold. A limit the happy
+path lands on top of is the wrong limit. Setting `RAG_SERVICE_TIMEOUT_MS` in the root
+`.env` is no longer necessary, though it still overrides.
+
+`e2e-live.test.js` now sets the budget explicitly in `beforeEach` instead of deleting it.
+Those tests are about the JS↔Python boundary, not about the timeout; the budget has its own
+test, which overrides to 1 ms.
 
 ---
 
@@ -65,7 +64,8 @@ Every row below was run in this session; the result is what the command actually
 | Component | Command | Result |
 |---|---|---|
 | JS test suite | `npm test` | **224 passed, 32 files** — excludes e2e by design |
-| JS e2e | `npm run test:e2e` | **8 failed, 5 passed** — 7 from an unapplied schema, 1 from services being down |
+| JS e2e | `npm run test:e2e` | **13 passed** — against the real database, with both services up |
+| Schema | `scripts/check_schema.py` | **fully applied, per-student records included** |
 | Python test suite | `.venv/Scripts/python.exe -m pytest -q` | **52 passed, 1 skipped** (0.24 s) |
 | Next build | `npx next build` | **compiles**, `/students` and `/students/[id]` in the route table |
 | Ollama server | `GET http://127.0.0.1:11434/api/tags` | **HTTP 200** |
@@ -511,17 +511,16 @@ referral itself. Undecided:
 
 ## Blockers
 
-**None hard.** Both earlier blockers are cleared: `rag_schema.sql` was applied (session 6)
-and the corpus is seeded (session 7), each verified by running the check.
+**None.** All three earlier blockers are cleared and each was verified by running the
+check, not by assuming: `rag_schema.sql` applied (session 6), the corpus seeded, and
+`students.sql` applied (2026-08-07, 13/13 e2e green against the real database).
 
-Three soft ones:
+Two soft items remain, neither blocking:
 
-- **`/journey` intermittently exceeds the client timeout.** Measured 121.8 s cold and
-  76.0 s warm against a 120 s default, so a cold run reports a timeout on a request that
-  succeeded. One env line fixes it — step 3 of *Next steps*.
-- **Grounded answers are slow on a cold model.** 75.5 s for the first call after Ollama
-  starts, 16.1 s warm. Not a defect — a 3B model doing CPU-only prompt evaluation over
-  ~6,600 chars of retrieved context. The cold figure is mostly model load.
+- **Grounded answers are slow on a cold model.** 118 s for the first call after Ollama
+  starts, 16-20 s warm. Not a defect — a 3B model doing CPU-only prompt evaluation over
+  ~6,600 chars of retrieved context, and the cold figure is mostly model load. Now well
+  inside the 300 s budget, but it is a long silent wait with no streaming.
 - **`chat_messages.mode` is not applied**, by choice, so mode badges do not survive a
   reload. The two-line SQL and the three code changes are written out under *Deliberately
   not done* above.

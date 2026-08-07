@@ -45,7 +45,7 @@ NEXT_PUBLIC_SUPABASE_URL=https://yourproject.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key_here
 RAG_SERVICE_URL=http://localhost:8000
 RAG_SERVICE_TOKEN=a_long_random_string
-RAG_SERVICE_TIMEOUT_MS=120000
+RAG_SERVICE_TIMEOUT_MS=300000
 ```
 
 `rag-service/.env` — and nothing else reads these:
@@ -105,7 +105,9 @@ function — names and counts only, never a key, so the output is safe to paste 
 issue. It resolves the project hostname first, so an unreachable project is reported as
 unreachable instead of looking like a missing schema.
 
-You want `Schema is fully applied.` Anything else and the RAG endpoints will 500.
+You want `Schema is fully applied, per-student records included.` Anything else and the
+RAG endpoints will 500, or the screener will reject every upload because `student_id` has
+nowhere to go. The output names which SQL file fixes each missing piece.
 
 ### 4. Warm the NLP model
 
@@ -179,10 +181,12 @@ npm run lint
 ## Tests
 
 ```bash
-npm test                 # whole JS suite
+npm test                 # unit + integration — no services, no database
 npm run test:unit        # tests/unit only
 npm run test:integration # tests/integration only
 npm run test:watch
+npm run test:e2e         # the live suites — needs the database and both services
+npm run test:all         # everything
 ```
 
 ```bash
@@ -190,11 +194,19 @@ cd rag-service
 .venv/Scripts/python.exe -m pytest -q
 ```
 
-Last verified run: **186 passed across 29 files** (JS, ~13 s) and **34 passed, 1 skipped**
-(Python, <1 s). The skip is the material-download feature that does not exist —
-`tests/README.md` note 5.
+Last verified run (2026-08-07): **224 passed across 32 files** (JS, ~9 s), **13 passed**
+(e2e, against the real project), and **52 passed, 1 skipped** (Python, <1 s). The skip is
+the material-download feature that does not exist — `tests/README.md` note 5.
 
-Nothing reaches the network and no API key is needed. The vision model, the Supabase
+`npm test` deliberately **excludes** `e2e-*.test.js`. Those talk to the real Supabase
+project and a running RAG service, so they fail on a machine with neither, and a
+permanently red default suite is one nobody reads.
+
+`npm run test:e2e` needs `E2E_SERVICE_TOKEN` set to the same value as `SERVICE_TOKEN` in
+`rag-service/.env`. Without it every authenticated call returns 401 and the failures look
+like broken code.
+
+Apart from the e2e suites, nothing reaches the network and no API key is needed. The vision model, the Supabase
 client and the RAG service are all doubled at the boundary, which is why both suites
 finish in seconds.
 

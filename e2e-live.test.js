@@ -11,7 +11,12 @@ const PROFILE = { primary_label: "phonological", weights: {} };
 beforeEach(() => {
   process.env.RAG_SERVICE_URL = LIVE_URL;
   process.env.RAG_SERVICE_TOKEN = TOKEN;
-  delete process.env.RAG_SERVICE_TIMEOUT_MS;
+  // Set explicitly rather than deleted. These tests are about the JS -> Python
+  // boundary, not about the time budget, and inheriting whatever the default
+  // happens to be made "builds a journey" fail at 120325 ms against a 120 s
+  // default — a passing request reported as a failure. The budget itself has its
+  // own test below, which overrides this to 1 ms.
+  process.env.RAG_SERVICE_TIMEOUT_MS = "300000";
 });
 
 describe("JS -> Python boundary, live", () => {
@@ -27,14 +32,14 @@ describe("JS -> Python boundary, live", () => {
     expect(r.data.citations.length).toBeGreaterThan(0);
     console.log("    answer:", r.data.answer.slice(0, 140));
     console.log("    citations:", r.data.citations.map((c) => c.title).join(", "));
-  }, 180000);
+  }, 300000);
 
   it("builds a journey", async () => {
     const r = await callRagService("/journey", { profile: PROFILE });
     expect(r.ok).toBe(true);
     expect(r.data.steps.length).toBeGreaterThan(0);
     console.log("    steps:", r.data.steps.map((s) => s.title).join(" | ").slice(0, 200));
-  }, 180000);
+  }, 300000);
 
   it("reports a bad token as an error, not as offline", async () => {
     process.env.RAG_SERVICE_TOKEN = "wrong-token";

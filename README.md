@@ -371,7 +371,7 @@ Recorded honestly — these are real and currently unmitigated. The
 
 | Gap | Impact |
 |---|---|
-| **No rate limiting on any endpoint** | `/api/chat` and `/api/journey` each trigger a local CPU-bound LLM. Measured on this hardware with the starter corpus: chat **16 s** warm and **76 s** on the first call after Ollama starts; journey **76–122 s**. Any signed-in user can saturate the machine. `/api/analyze` spends paid Gemini quota per call. |
+| **No rate limiting on any endpoint** | `/api/chat` and `/api/journey` each trigger a local CPU-bound LLM. Measured on this hardware with the starter corpus: chat **16–20 s** warm and **118 s** on the first call after Ollama starts; journey **72–122 s**. Any signed-in user can saturate the machine. `/api/analyze` spends paid Gemini quota per call. |
 | **`/api/chat` does not bound question length** | Its sibling `/api/analyze-text` caps at 20,000 chars; chat accepts any string, forwards it to the model and stores it. |
 | **No security headers** | `next.config.mjs` defines no `headers()`, so there is no CSP, `frame-ancestors`/X-Frame-Options, HSTS, `X-Content-Type-Options` or `Referrer-Policy`. The authenticated dashboard is framable. |
 | **Raw error text reaches the client** | `app/api/analyze/route.js` returns `err.message` from any unexpected throw, and the raw model output when JSON parsing fails. |
@@ -415,10 +415,11 @@ Stated plainly because they matter for interpreting output:
   screener's own error categories and the practice that suits each pattern, and nothing
   else. Ask it something outside that and it will correctly say it has no material.
 - **Answers are slow on CPU-only hardware.** Grounded answers feed the retrieved excerpts
-  into the local model, so they cost far more than an ungrounded one: measured 16 s warm,
-  76 s on the first call after Ollama starts. `/journey` measured 76–122 s, which straddles
-  the 120 s default in `lib/ragService.js` — on a slow run the browser reports a timeout
-  for a request that actually succeeded. Raise `RAG_SERVICE_TIMEOUT_MS` if you hit it.
+  into the local model, so they cost far more than an ungrounded one: measured 16–20 s
+  warm, 118 s on the first call after Ollama starts. `/journey` measured 72–122 s. The
+  client budget is 300 s (`DEFAULT_TIMEOUT_MS`), raised from 120 s after a live run timed
+  out at 120.3 s on a request that had actually succeeded. There is no streaming, so the
+  UI is silent for the whole wait.
 - **The assistant is not per-student.** Screenings, profiles and journeys belong to a
   student, but the chat panel on `/dashboard` is still therapist-level — one conversation
   for the whole caseload, not one per student.
