@@ -1,5 +1,17 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
+import { roleOf, STUDENT } from "./lib/roles";
+
+// Everything a student account may reach. An ALLOWLIST on purpose: a therapist
+// route added later is closed to students automatically, whereas a denylist
+// leaks every route until somebody remembers to add it.
+const STUDENT_PATHS = ["/my-journey", "/account", "/login", "/api/journey/step"];
+
+function allowedForStudent(pathname) {
+  return STUDENT_PATHS.some(
+    (allowed) => pathname === allowed || pathname.startsWith(`${allowed}/`)
+  );
+}
 
 // Refreshes the Supabase auth session on every request and redirects
 // unauthenticated users to /login (except for the login page itself and
@@ -54,9 +66,38 @@ export async function middleware(request) {
   }
 
   if (user && isLoginPage) {
+    // Role-aware so a student does not bounce /login -> /dashboard -> /my-journey.
     const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
+    url.pathname = roleOf(user) === STUDENT ? "/my-journey" : "/dashboard";
     return NextResponse.redirect(url);
+  }
+
+  if (user) {
+    const student = roleOf(user) === STUDENT;
+
+    if (student && !allowedForStudent(pathname)) {
+      // Same reasoning as the 401 above: JourneyBoard.jsx calls res.json()
+      // before checking res.ok, so HTML here surfaces a parser error instead of
+      // the real reason.
+      if (isApiRoute) {
+        return NextResponse.json(
+          { error: "That is not available on a student account." },
+          { status: 403 }
+        );
+      }
+
+      const url = request.nextUrl.clone();
+      url.pathname = "/my-journey";
+      return NextResponse.redirect(url);
+    }
+
+    // A therapist has no student record, so /my-journey would render an error
+    // for them. Send them where their work actually is.
+    if (!student && pathname.startsWith("/my-journey")) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/students";
+      return NextResponse.redirect(url);
+    }
   }
 
   return response;

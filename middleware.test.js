@@ -171,6 +171,75 @@ describe("the session refresh", () => {
   });
 });
 
+const STUDENT_USER = {
+  id: "student-1",
+  email: "ana@example.com",
+  app_metadata: { role: "student" },
+};
+
+describe("a signed-in student", () => {
+  it("is sent to their journey from every therapist page", async () => {
+    // An allowlist, so a therapist page added later is closed to students by
+    // default rather than the day someone remembers to add it to a denylist.
+    for (const pathname of ["/", "/dashboard", "/students", "/analysis", "/students/abc"]) {
+      mocks.user.value = STUDENT_USER;
+      const response = await middleware(request(pathname));
+
+      expect(response.status, `${pathname} should redirect`).toBe(307);
+      expect(new URL(response.headers.get("location")).pathname).toBe("/my-journey");
+    }
+  });
+
+  it("gets a JSON 403 from a therapist API route, not a redirect", async () => {
+    // /api/analyze calls the Gemini API and has no RLS behind it, so middleware
+    // is the only thing standing between a student and someone's billing.
+    mocks.user.value = STUDENT_USER;
+    const response = await middleware(request("/api/analyze"));
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect((await response.json()).error).toMatch(/not available/i);
+  });
+
+  it("reaches their own journey, the step API and the account page", async () => {
+    for (const pathname of ["/my-journey", "/api/journey/step", "/account"]) {
+      mocks.user.value = STUDENT_USER;
+      const response = await middleware(request(pathname));
+
+      expect(response.status, `${pathname} should pass through`).toBe(200);
+      expect(response.headers.get("location")).toBeNull();
+    }
+  });
+
+  it("lands on their journey after signing in, not on the dashboard", async () => {
+    mocks.user.value = STUDENT_USER;
+    const response = await middleware(request("/login"));
+
+    expect(response.status).toBe(307);
+    expect(new URL(response.headers.get("location")).pathname).toBe("/my-journey");
+  });
+});
+
+describe("a signed-in therapist", () => {
+  it("is sent to the caseload from the student page", async () => {
+    mocks.user.value = SIGNED_IN;
+    const response = await middleware(request("/my-journey"));
+
+    expect(response.status).toBe(307);
+    expect(new URL(response.headers.get("location")).pathname).toBe("/students");
+  });
+
+  it("still reaches every therapist page", async () => {
+    for (const pathname of ["/", "/dashboard", "/students", "/analysis"]) {
+      mocks.user.value = SIGNED_IN;
+      const response = await middleware(request(pathname));
+
+      expect(response.status, `${pathname} should pass through`).toBe(200);
+    }
+  });
+});
+
 describe("the matcher", () => {
   it("covers pages and API routes while skipping static assets", () => {
     // Next compiles this with path-to-regexp, but the pattern contains no
