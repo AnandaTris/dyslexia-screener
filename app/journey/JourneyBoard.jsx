@@ -5,7 +5,15 @@ import { progressFor } from "../../lib/journey";
 
 const NEXT_STATUS = { not_started: "done", in_progress: "done", done: "not_started" };
 
-export default function JourneyBoard({ initialJourney, studentId, studentName }) {
+export default function JourneyBoard({
+  initialJourney,
+  studentId,
+  studentName,
+  // Defaults true so the therapist's existing usage is unchanged. Building
+  // fires a 72-121s RAG call and is a therapist action, so a student never
+  // sees the button.
+  canBuild = true,
+}) {
   const [journey, setJourney] = useState(initialJourney);
   const [building, setBuilding] = useState(false);
   const [note, setNote] = useState(null);
@@ -74,6 +82,18 @@ export default function JourneyBoard({ initialJourney, studentId, studentName })
   };
 
   if (!journey) {
+    // A student cannot build one, so the therapist's copy — which tells the
+    // reader to press a button that is not rendered for them — would be a dead
+    // end.
+    if (!canBuild) {
+      return (
+        <p className="empty-state">
+          Your therapist hasn&apos;t set up your journey yet. It will appear here
+          when they do.
+        </p>
+      );
+    }
+
     return (
       <div>
         <p className="empty-state">
@@ -137,13 +157,17 @@ export default function JourneyBoard({ initialJourney, studentId, studentName })
         ))}
       </ol>
 
-      <button className="btn btn-ghost" onClick={build} disabled={building}>
-        {building ? "Rebuilding…" : "Rebuild from the latest profile"}
-      </button>
-      <p className="auth-hint">
-        Rebuilding archives this journey and starts a fresh one. The old progress is
-        kept, not deleted, and no other student is affected.
-      </p>
+      {canBuild && (
+        <>
+          <button className="btn btn-ghost" onClick={build} disabled={building}>
+            {building ? "Rebuilding…" : "Rebuild from the latest profile"}
+          </button>
+          <p className="auth-hint">
+            Rebuilding archives this journey and starts a fresh one. The old progress is
+            kept, not deleted, and no other student is affected.
+          </p>
+        </>
+      )}
     </div>
   );
 }
