@@ -4,7 +4,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { callRagService } from "./lib/ragService.js";
 
-const LIVE_URL = "http://127.0.0.1:8000";
+// Overridable because :8000 is not always ours. On a machine running several
+// projects another service can hold the port — Windows lets both bind, so the
+// requests split between them and this suite fails with 404s that look like
+// missing routes. Point E2E_RAG_URL at the port uvicorn actually reported.
+const LIVE_URL = process.env.E2E_RAG_URL || "http://127.0.0.1:8000";
 const TOKEN = process.env.E2E_SERVICE_TOKEN;
 const PROFILE = { primary_label: "phonological", weights: {} };
 
