@@ -4,6 +4,7 @@ import { createClient } from "../../../lib/supabase/server";
 import { loadStudent, ageFromBirthYear } from "../../../lib/students";
 import { loadActiveJourney } from "../../../lib/journey";
 import JourneyBoard from "../../journey/JourneyBoard";
+import StudentLoginPanel from "../StudentLoginPanel";
 
 const PROFILE_LABELS = {
   phonological: "Phonological (sound–symbol)",
@@ -95,6 +96,15 @@ export default async function StudentPage({ params }) {
           ) : (
             <p>Nothing screened yet.</p>
           )}
+        </section>
+
+        <section className="dash-card dash-card-static">
+          <h2>Student login</h2>
+          <StudentLoginPanel
+            studentId={student.id}
+            studentName={student.display_name}
+            loginEmail={student.login_email ?? null}
+          />
         </section>
       </div>
 
