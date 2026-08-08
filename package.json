@@ -17,7 +17,7 @@
     "test:watch": "vitest --exclude \"**/e2e-*.test.js\"",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
-    "test:e2e": "vitest run e2e-students.test.js e2e-live.test.js",
+    "test:e2e": "vitest run e2e-students.test.js e2e-student-access.test.js e2e-live.test.js",
     "test:all": "vitest run"
   },
   "dependencies": {
