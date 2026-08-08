@@ -17,7 +17,7 @@ export function fakeSupabase({ user = null, data = {} } = {}) {
   const writes = [];
 
   const make = (table) => {
-    const state = { table, op: "select", filters: [], rows: null, patch: null };
+    const state = { table, op: "select", filters: [], rows: null, patch: null, columns: null };
 
     const settle = () => {
       const entry = data[`${table}.${state.op}`] ?? data[table];
@@ -26,7 +26,12 @@ export function fakeSupabase({ user = null, data = {} } = {}) {
     };
 
     const api = {
-      select: () => api,
+      // Recorded so a test can answer differently per column list — which is how
+      // "these columns don't exist yet" is modelled.
+      select: (columns = null) => {
+        state.columns = columns;
+        return api;
+      },
       eq: (column, value) => {
         state.filters.push([column, value]);
         return api;

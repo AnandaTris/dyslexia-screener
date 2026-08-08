@@ -63,6 +63,19 @@ async function resolveTherapistAndStudent(supabase, studentId, verb) {
   const student = await loadStudent(supabase, user.id, studentId);
   if (!student) return { error: "That student was not found." };
 
+  // The student row loaded, but students.auth_user_id does not exist yet, so
+  // there is nowhere to record a login. Stopping here is the point: the admin
+  // API would happily create the auth account, the link write would then fail
+  // on the missing column, and the cleanup path would be undoing damage this
+  // check prevents outright.
+  if (student.loginsUnavailable) {
+    return {
+      error:
+        "Student logins are not available yet — apply supabase/student_accounts.sql " +
+        "in the Supabase dashboard first.",
+    };
+  }
+
   return { student };
 }
 

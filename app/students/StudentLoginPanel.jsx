@@ -6,7 +6,15 @@ import { INITIAL_PASSWORD } from "../../lib/studentAuth";
 
 // Neither action redirects, so both a success and a failure come back as a
 // value — unlike AddStudentForm, where anything returned is a failure.
-export default function StudentLoginPanel({ studentId, studentName, loginEmail }) {
+export default function StudentLoginPanel({
+  studentId,
+  studentName,
+  loginEmail,
+  // True when students.auth_user_id does not exist yet. Rendering the form
+  // anyway would invite a therapist to type a real address into something that
+  // cannot save it.
+  loginsUnavailable = false,
+}) {
   const [error, setError] = useState(null);
   const [ok, setOk] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -38,6 +46,22 @@ export default function StudentLoginPanel({ studentId, studentName, loginEmail }
       )}
     </>
   );
+
+  if (loginsUnavailable) {
+    return (
+      <div className="setup-callout" role="status">
+        <p>
+          Student logins need one more migration. Open the Supabase dashboard,
+          go to <strong>SQL Editor → New query</strong>, paste the contents of{" "}
+          <code>supabase/student_accounts.sql</code> and run it.
+        </p>
+        <p className="auth-hint">
+          Everything else on this page — {studentName}&apos;s profile, screenings
+          and learning journey — is unaffected.
+        </p>
+      </div>
+    );
+  }
 
   if (loginEmail) {
     return (

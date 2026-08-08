@@ -104,6 +104,7 @@ export default async function StudentPage({ params }) {
             studentId={student.id}
             studentName={student.display_name}
             loginEmail={student.login_email ?? null}
+            loginsUnavailable={Boolean(student.loginsUnavailable)}
           />
         </section>
       </div>

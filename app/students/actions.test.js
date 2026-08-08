@@ -281,6 +281,40 @@ describe("createStudentLogin", () => {
   });
 });
 
+describe("login actions when student_accounts.sql has not been applied", () => {
+  // loadStudent now flags this rather than 404ing. Without the guard below,
+  // createStudentLogin would create a real auth user and only then discover the
+  // link column is missing — leaving an account nothing points at, and every
+  // retry failing with "already registered" forever.
+  const unmigrated = () =>
+    fakeSupabase({
+      user: THERAPIST_USER,
+      data: { students: { data: student({ loginsUnavailable: true }), error: null } },
+    });
+
+  it("refuses to create a login, without touching the admin API", async () => {
+    createClient.mockResolvedValue(unmigrated());
+
+    const result = await createStudentLogin(
+      form({ student_id: "st1", email: "ana@example.com" })
+    );
+
+    expect(result.error).toMatch(/student_accounts\.sql/);
+    expect(createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it("refuses to reset a password rather than blaming the student", async () => {
+    // "Ana does not have a login yet" would be a lie: the column that records it
+    // does not exist, so nothing is known either way.
+    createClient.mockResolvedValue(unmigrated());
+
+    const result = await resetStudentPassword(form({ student_id: "st1" }));
+
+    expect(result.error).toMatch(/student_accounts\.sql/);
+    expect(createAdminClient).not.toHaveBeenCalled();
+  });
+});
+
 describe("resetStudentPassword", () => {
   it("puts the password back to the initial one", async () => {
     createClient.mockResolvedValue(
