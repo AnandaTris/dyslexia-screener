@@ -72,7 +72,7 @@ describe("Integrated Test 2 — Login", () => {
     expect(userRepository.calls).toEqual([["findUser", "teacher@school.edu"]]);
 
     // The stored password admitted the user: login successful.
-    expect(redirected.pathname).toBe("/");
+    expect(redirected.pathname).toBe("/dashboard");
     expect(redirected.params.error).toBeUndefined();
   });
 

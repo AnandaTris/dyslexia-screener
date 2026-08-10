@@ -10,6 +10,14 @@
   --flag-weak: #6b7a94;
   --ok-green: #2e7d5b;
   --card-border: #dcdad2;
+
+  /* Motion. The built-in CSS easings are too weak to read as intentional, so
+     these are the stronger variants everything below uses. `ease-in` is
+     deliberately absent: it starts slow, which makes a control feel
+     unresponsive at exactly the moment the user is watching most closely. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --press: 140ms;
 }
 
 * {
@@ -141,7 +149,7 @@ h3 {
   cursor: pointer;
   color: var(--ink-soft);
   font-size: 0.92rem;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color 150ms var(--ease-out), background 150ms var(--ease-out);
   background: #fff;
 }
 
@@ -198,6 +206,17 @@ h3 {
   padding: 10px 18px;
   cursor: pointer;
   border: 1px solid transparent;
+  transition: transform var(--press) var(--ease-out),
+    background var(--press) var(--ease-out),
+    border-color var(--press) var(--ease-out),
+    color var(--press) var(--ease-out);
+}
+
+/* Press feedback. This matters more here than in most apps: a grounded answer
+   can take over a minute to come back, so the press is the only immediate
+   confirmation the interface heard the click at all. */
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .btn:focus-visible {
@@ -338,7 +357,9 @@ h3 {
     var(--flag-moderate) 55%,
     var(--flag-strong)
   );
-  transition: width 0.6s ease;
+  /* 450ms rather than the sub-300ms UI budget: this bar is a result being
+     revealed after an analysis, not a control responding to a click. */
+  transition: width 450ms var(--ease-out);
 }
 
 .gauge-label {
@@ -518,6 +539,15 @@ h3 {
 @media (prefers-reduced-motion: reduce) {
   .spinner {
     animation-duration: 2s;
+  }
+
+  /* Reduced motion means less movement, not no feedback. The colour and border
+     transitions stay because they carry meaning; only the transforms go. */
+  .btn:active:not(:disabled),
+  a.dash-card:hover,
+  a.dash-card:active {
+    transform: none;
+    box-shadow: none;
   }
 }
 
@@ -933,4 +963,505 @@ h3 {
   padding: 10px 14px;
   font-size: 0.88rem;
   margin-top: 12px;
+}
+
+/* ---- Students ---- */
+
+.student-list {
+  list-style: none;
+  margin: 0 0 28px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  gap: 16px;
+}
+
+.student-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: 100%;
+  padding: 18px;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: var(--paper);
+  text-decoration: none;
+  color: inherit;
+  transition: transform 200ms var(--ease-out), border-color 200ms var(--ease-out),
+    box-shadow 200ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .student-card:hover {
+    border-color: var(--ink);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(27, 42, 74, 0.08);
+  }
+}
+
+.student-card:active {
+  transform: translateY(0) scale(0.99);
+}
+
+.student-card:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.student-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.student-card h2 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+/* Initials rather than a photo: this app should not be storing a child's face,
+   and a letterform is enough to tell two cards apart at a glance. */
+.student-avatar {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--paper-deep);
+  border: 1px solid var(--card-border);
+  color: var(--ink);
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+}
+
+.student-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.student-meta {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.badge {
+  align-self: flex-start;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.badge-profile {
+  background: #e8f0ea;
+  border-color: #bcd6c6;
+  color: var(--ok-green);
+}
+
+.badge-todo {
+  background: var(--paper-deep);
+  border-color: var(--card-border);
+  color: var(--ink-soft);
+}
+
+.setup-callout {
+  border: 1px solid var(--flag-strong);
+  border-left-width: 4px;
+  background: #fbeae7;
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 24px;
+}
+
+.setup-callout h2 {
+  font-size: 1.05rem;
+  margin-bottom: 6px;
+  color: var(--flag-strong);
+}
+
+.setup-callout code {
+  background: rgba(179, 64, 46, 0.1);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.empty-panel,
+.add-student-panel {
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: var(--paper);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.empty-panel h2,
+.add-student-panel h2 {
+  font-size: 1.05rem;
+  margin-bottom: 8px;
+}
+
+.student-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 380px;
+}
+
+.screening-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.screening-date {
+  color: var(--ink-soft);
+  margin-left: 8px;
+  font-size: 0.85rem;
+}
+
+/* ---- Dashboard: orientation ---- */
+
+.section-heading {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 28px 0 12px;
+}
+
+/* One unambiguous answer to "what now?". Four equal cards make the user choose;
+   this makes the choice for them and leaves the cards as the map. */
+.next-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+  padding: 16px 20px;
+  border: 1px solid var(--ink);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.next-step-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.next-step-text {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 1.2rem;
+  margin: 2px 0 0;
+}
+
+.how-strip {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  counter-reset: how;
+}
+
+.how-strip li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px 16px;
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  background: var(--paper);
+  font-size: 0.88rem;
+}
+
+.how-strip strong {
+  font-size: 0.95rem;
+}
+
+.how-strip span:last-child {
+  color: var(--ink-soft);
+}
+
+.how-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+/* ---- Dashboard hub ---- */
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin: 24px 0;
+}
+
+.dash-card {
+  display: block;
+  padding: 20px;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: var(--paper);
+  text-decoration: none;
+  color: inherit;
+  transition: transform 200ms var(--ease-out), border-color 200ms var(--ease-out),
+    box-shadow 200ms var(--ease-out);
+}
+
+/* Gated behind a real pointer: on a touch screen :hover fires on tap and then
+   sticks, leaving a card lifted with no way to un-hover it. */
+@media (hover: hover) and (pointer: fine) {
+  a.dash-card:hover {
+    border-color: var(--ink);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(27, 42, 74, 0.08);
+  }
+}
+
+a.dash-card:active {
+  transform: translateY(0) scale(0.99);
+}
+
+a.dash-card:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.dash-card h2 {
+  font-size: 1.15rem;
+  margin-bottom: 6px;
+}
+
+.dash-card p {
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
+.dash-card-static {
+  cursor: default;
+}
+
+/* ---- Learning assistant ---- */
+
+.assistant-panel {
+  margin-top: 16px;
+  padding: 20px;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.assistant-note {
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  margin-top: 4px;
+}
+
+.chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 16px 0;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.chat-msg {
+  padding: 10px 13px;
+  border-radius: 10px;
+  max-width: 90%;
+  font-size: 0.95rem;
+}
+
+.chat-msg.user {
+  align-self: flex-end;
+  background: var(--rule-blue);
+}
+
+.chat-msg.assistant {
+  align-self: flex-start;
+  background: var(--paper-deep);
+}
+
+.chat-citations {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  margin-top: 6px;
+}
+
+/* The badge sits where the Sources line would: an ungrounded answer should be
+   marked in the same place a grounded one is credited, not tucked away. */
+.chat-ungrounded {
+  font-size: 0.8rem;
+  color: var(--flag-strong);
+  margin-top: 6px;
+}
+
+.chat-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.chat-mode label {
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+.chat-mode select {
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.95rem;
+  padding: 7px 10px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.chat-mode select:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-input-row input {
+  flex: 1;
+  font-family: var(--font-body), sans-serif;
+  font-size: 1rem;
+  padding: 10px 12px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.chat-input-row input:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.chat-offline {
+  color: var(--flag-strong);
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+}
+
+/* ---- Learning journey ---- */
+
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--paper-deep);
+  border: 1px solid var(--card-border);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--ok-green);
+  transition: width 240ms var(--ease-out);
+}
+
+.progress-label {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.journey-steps {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 0 20px;
+}
+
+.journey-step {
+  padding: 14px 16px;
+  border: 1px solid var(--card-border);
+  border-left: 4px solid var(--rule-blue);
+  border-radius: 10px;
+  background: var(--paper);
+}
+
+.journey-step.done {
+  border-left-color: var(--ok-green);
+  background: var(--paper-deep);
+}
+
+.step-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.step-head input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--ok-green);
+  flex-shrink: 0;
+}
+
+.step-title {
+  font-family: var(--font-display), Georgia, serif;
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+.journey-step.done .step-title {
+  text-decoration: line-through;
+  color: var(--ink-soft);
+}
+
+.step-description {
+  margin-top: 6px;
+  padding-left: 28px;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
+.journey-step .chat-citations {
+  padding-left: 28px;
 }

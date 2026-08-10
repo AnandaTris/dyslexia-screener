@@ -68,4 +68,49 @@ describe("POST /api/chat", () => {
     expect(chatInserts.length).toBe(1);
     expect(chatInserts[0][1].length).toBe(2);
   });
+
+  it("passes a valid mode through to the service", async () => {
+    createClient.mockResolvedValue(makeSupabase({ user: { id: "u1" } }));
+    callRagService.mockResolvedValue({ ok: true, data: { answer: "A" } });
+    await POST(req({ question: "help", mode: "plain" }));
+    expect(callRagService).toHaveBeenCalledWith(
+      "/chat",
+      expect.objectContaining({ mode: "plain" })
+    );
+  });
+
+  it("defaults to grounded when no mode is sent", async () => {
+    createClient.mockResolvedValue(makeSupabase({ user: { id: "u1" } }));
+    callRagService.mockResolvedValue({ ok: true, data: { answer: "A" } });
+    await POST(req({ question: "help" }));
+    expect(callRagService).toHaveBeenCalledWith(
+      "/chat",
+      expect.objectContaining({ mode: "grounded" })
+    );
+  });
+
+  it("normalises an unrecognised mode to grounded rather than answering ungrounded", async () => {
+    createClient.mockResolvedValue(makeSupabase({ user: { id: "u1" } }));
+    callRagService.mockResolvedValue({ ok: true, data: { answer: "A" } });
+    const res = await POST(req({ question: "help", mode: "PLAIN; drop table" }));
+    expect(callRagService).toHaveBeenCalledWith(
+      "/chat",
+      expect.objectContaining({ mode: "grounded" })
+    );
+    expect((await res.json()).mode).toBe("grounded");
+  });
+
+  // Deliberate, not an oversight: chat_messages.mode is defined in
+  // supabase/rag_schema.sql but not applied to the live project, and PostgREST
+  // fails a whole insert that names a column it does not know. Persisting the
+  // transcript matters more than persisting the badge. Delete this test when the
+  // alter has run and mode goes back into the insert.
+  it("does not write mode until the column exists", async () => {
+    const supabase = makeSupabase({ user: { id: "u1" } });
+    createClient.mockResolvedValue(supabase);
+    callRagService.mockResolvedValue({ ok: true, data: { answer: "A" } });
+    await POST(req({ question: "help", mode: "plain" }));
+    const [, rows] = supabase._inserted.find(([t]) => t === "chat_messages");
+    expect(rows.some((r) => "mode" in r)).toBe(false);
+  });
 });

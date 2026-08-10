@@ -124,7 +124,7 @@ describe("UC6 — Verify Email", () => {
       signup(formDataOf({ email: "teacher@school.edu", password: "correct-horse" })),
     );
 
-    expect(redirected.pathname).toBe("/");
+    expect(redirected.pathname).toBe("/dashboard");
     expect(redirected.params.message).toBeUndefined();
   });
 

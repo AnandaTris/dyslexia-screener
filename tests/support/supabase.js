@@ -109,8 +109,21 @@ export function createFakeSupabase({
   requireEmailConfirmation = true,
   currentUser = null,
   insertError = null,
+  // A screening now has to name a student, so the double seeds one owned by
+  // whoever is signed in. Pass `students: []` to exercise the unknown-student
+  // path.
+  students = currentUser
+    ? [
+        {
+          id: "student-1",
+          therapist_id: currentUser.id,
+          display_name: "Test Student",
+          birth_year: null,
+        },
+      ]
+    : [],
 } = {}) {
-  const tables = {};
+  const tables = { students: [...students] };
   const inserts = [];
   const upserts = [];
   const signedOut = [];
@@ -123,11 +136,21 @@ export function createFakeSupabase({
 
   // The screening route upserts a derived learner profile alongside the
   // screening insert. Recorded on its own list so a test can tell the two
-  // writes apart; `onConflict` is accepted and ignored, since nothing here
-  // needs to model a real unique constraint.
-  function recordUpsert(table, row) {
+  // writes apart.
+  //
+  // `onConflict` is honoured rather than ignored, because the whole point of
+  // per-student records is which column that key is. If the double just
+  // appended, a per-therapist upsert and a per-student one would look identical
+  // in the stored rows, and the regression this feature exists to prevent —
+  // screening a second student wiping the first one's profile — would pass
+  // either way.
+  function recordUpsert(table, row, options = {}) {
     upserts.push({ table, row });
-    (tables[table] ??= []).push(row);
+    const rows = (tables[table] ??= []);
+    const key = options?.onConflict;
+    const clash = key ? rows.findIndex((existing) => existing[key] === row[key]) : -1;
+    if (clash >= 0) rows[clash] = row;
+    else rows.push(row);
     return { data: null, error: insertError };
   }
 
@@ -212,15 +235,44 @@ export function createFakeSupabase({
       },
     },
 
+    // Writes are recorded; reads are answered from the seeded table. The read
+    // half exists because the screening route now resolves a student before it
+    // will spend a Gemini call, so the route cannot run without it.
     from(table) {
-      return {
+      const filters = [];
+      const builder = {
         insert(row) {
           return Promise.resolve(recordInsert(table, row));
         },
-        upsert(row) {
-          return Promise.resolve(recordUpsert(table, row));
+        upsert(row, options) {
+          return Promise.resolve(recordUpsert(table, row, options));
+        },
+        select() {
+          return builder;
+        },
+        eq(column, value) {
+          filters.push([column, value]);
+          return builder;
+        },
+        order() {
+          return builder;
+        },
+        limit() {
+          return builder;
+        },
+        matches() {
+          return (tables[table] ?? []).filter((row) =>
+            filters.every(([column, value]) => row[column] === value)
+          );
+        },
+        maybeSingle() {
+          return Promise.resolve({ data: builder.matches()[0] ?? null, error: null });
+        },
+        then(onOk, onErr) {
+          return Promise.resolve({ data: builder.matches(), error: null }).then(onOk, onErr);
         },
       };
+      return builder;
     },
   };
 }

@@ -8,6 +8,7 @@ from app.db import Db
 from app.embeddings import Embedder
 from app.generation import Generator, answer_question, compose_journey
 from app.ingest import ingest_document
+from app.plain import answer_plain
 from app.retrieval import retrieve
 from app.schemas import ChatRequest, IngestRequest, JourneyRequest
 from supabase import create_client
@@ -73,10 +74,18 @@ def journey(req: JourneyRequest, _: None = Depends(require_service_token),
 def chat(req: ChatRequest, _: None = Depends(require_service_token),
          embedder: Embedder = Depends(get_embedder),
          generator: Generator = Depends(get_generator), db: Db = Depends(get_db)):
-    settings = get_settings()
     profile = req.profile.model_dump()
+    history = [m.model_dump() for m in req.recent_history]
+
+    # Plain mode skips retrieval entirely — no embedding call, no pgvector round
+    # trip, one Ollama call. It is therefore faster than grounded, not slower.
+    # embedder and db stay declared as dependencies so the tests can assert they
+    # were never touched.
+    if req.mode == "plain":
+        return answer_plain(req.question, profile, history, generator)
+
+    settings = get_settings()
     profiles = [profile["primary_label"]] if profile.get("primary_label") else None
     chunks = retrieve(req.question, embedder=embedder, db=db, k=settings.retrieval_k,
                       profiles=profiles, threshold=settings.similarity_threshold)
-    history = [m.model_dump() for m in req.recent_history]
     return answer_question(req.question, profile, chunks, history, generator)

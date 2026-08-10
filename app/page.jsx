@@ -44,6 +44,35 @@ export default function Home() {
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [writerAge, setWriterAge] = useState("");
+  const [students, setStudents] = useState([]);
+  const [studentId, setStudentId] = useState("");
+
+  // RLS scopes this to the signed-in therapist, so no therapist_id filter is
+  // needed from the browser.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("students")
+        .select("id, display_name, birth_year")
+        .order("display_name", { ascending: true });
+      if (!cancelled) setStudents(data ?? []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Prefill the age from the student's year of birth. The field stays editable
+  // — a typed value still wins on the server — but this stops the reversal
+  // guard depending on someone remembering to fill it in.
+  useEffect(() => {
+    const student = students.find((s) => s.id === studentId);
+    if (!student?.birth_year) return;
+    const age = new Date().getFullYear() - Number(student.birth_year);
+    if (age >= 0) setWriterAge(String(age));
+  }, [studentId, students]);
   const inputRef = useRef(null);
   const router = useRouter();
 
@@ -89,6 +118,12 @@ export default function Home() {
 
   const analyze = async () => {
     if (!file) return;
+    // Checked here as well as server-side so the therapist finds out before the
+    // upload goes over the wire, not after.
+    if (!studentId) {
+      setError("Pick a student before screening.");
+      return;
+    }
     setLoading(true);
     setError(null);
     setResult(null);
@@ -99,6 +134,7 @@ export default function Home() {
       // before a single byte goes out; the browser streams this instead.
       const form = new FormData();
       form.append("file", file);
+      form.append("student_id", studentId);
       if (parsedAge !== null) form.append("writerAge", String(parsedAge));
 
       const res = await fetch("/api/analyze", { method: "POST", body: form });
@@ -152,6 +188,9 @@ export default function Home() {
           </Link>
           {userEmail && (
             <>
+              <Link className="nav-link" href="/dashboard">
+                Dashboard
+              </Link>
               <span className="user-email">{userEmail}</span>
               <form action={signout}>
                 <button type="submit" className="btn btn-ghost">
@@ -232,6 +271,33 @@ export default function Home() {
             </div>
           )}
 
+          <label className="auth-label" htmlFor="student">
+            Student
+          </label>
+          <select
+            id="student"
+            className="auth-input"
+            value={studentId}
+            onChange={(e) => setStudentId(e.target.value)}
+            required
+          >
+            <option value="">Choose a student…</option>
+            {students.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.display_name}
+              </option>
+            ))}
+          </select>
+          <p className="auth-hint">
+            {students.length === 0 ? (
+              <>
+                No students yet — <Link href="/students">add one first</Link>.
+              </>
+            ) : (
+              "The result is filed against this student's record."
+            )}
+          </p>
+
           <label className="auth-label" htmlFor="writer-age">
             Writer&apos;s age (optional)
           </label>
@@ -253,7 +319,7 @@ export default function Home() {
             <button
               className="btn btn-primary"
               onClick={analyze}
-              disabled={loading || !file}
+              disabled={loading || !file || !studentId}
             >
               {loading ? (
                 <>

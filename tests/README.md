@@ -1,22 +1,39 @@
 # Test plan → tests
 
-Traceability for the ESC Team 6 test plan. **One test per case in that document**,
-and nothing else: 12 table rows plus 4 sequence diagrams = 16 tests, of which 15
-pass and 1 is skipped because the feature does not exist.
+Traceability for the ESC Team 6 test plan. **This directory holds one test per case
+in that document, and nothing else**: 12 table rows plus 4 sequence diagrams = 16
+tests, of which 15 pass and 1 is skipped because the feature does not exist.
+
+The repository has more tests than these. Suites colocated with their source
+(`lib/`, `app/api/`, `app/login/`) cover code no row of the plan reaches — the NLP
+pipeline, the verdict rule, the RAG integration.
+
+**One exception to the one-to-one rule.** `tests/integration/it5-student-records.test.js`
+is *not* a plan case. It sits here because it is a genuine integration test and there is
+nowhere better for it, and because the regression it guards is the most consequential in
+the project: before per-student records, screening a second student overwrote the first
+student's profile. `npm run test:integration` therefore runs 5 files, not 4.
 
 ## Running them
 
 ```bash
-npm test                  # 11 tests: UC1-UC3, UC6-UC8, integrated 1-3
-npm run test:unit
-npm run test:integration
+npm test                  # unit + integration (224 tests) — no services, no database
+npm run test:unit         # plan cases 1-12
+npm run test:integration  # plan cases 13-16, plus it5
 npm run test:watch
+npm run test:e2e          # the two live suites — needs a database and running services
+npm run test:all          # everything, e2e included
 ```
+
+`npm test` deliberately **excludes** `e2e-*.test.js`. Those talk to the real Supabase
+project and a running RAG service, so they fail on a laptop with neither — and a
+permanently red default suite is one nobody reads. Run them explicitly with
+`npm run test:e2e`.
 
 ```bash
 cd rag-service
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # once
-.venv/bin/python -m pytest -q      # 5 material tests (+ 30 pre-existing)
+.venv/bin/python -m pytest -q      # 53 tests: 52 pass, 1 skipped
 ```
 
 `tests/unit` mocks each collaborator, as the plan's Mock column specifies.
@@ -98,29 +115,46 @@ row to `screenings` after the model returns, holding the transcription and the
 prediction together, so no `sampleId` is issued before the model call. Saving the
 sample first would be better — a model failure currently loses the upload entirely.
 
-**(8) A screening carries no `studentRef`.** Results attach to the signed-in
-educator, not to an identified learner, so they cannot be grouped per student. Same
-gap the README lists under "Still to do".
+**(8) ~~A screening carries no `studentRef`.~~ Closed.** A screening now carries
+`student_id`, and `learner_profiles` is keyed on it, so results group per student.
+Covered by `tests/integration/it5-student-records.test.js` and the four per-student
+cases in `tests/unit/uc3-uc8-…`. The schema behind it lives in
+`supabase/students.sql`.
 
 ## Not covered, deliberately
 
-The suite is scoped to the plan's 16 cases. These were written and then removed to
-keep that one-to-one mapping, and are worth knowing about before the final report,
-whose rubric asks for boundary cases, negative cases, and both frontend and backend
-unit testing:
+This directory is scoped to the plan's 16 cases. Anything outside them was kept out
+of `tests/` to preserve the one-to-one mapping — but several gaps listed here have
+since been closed by colocated suites elsewhere in the repo:
 
-- **`lib/screening/verdict.js`** — the score threshold and the guard that holds a
+- ✅ **`lib/screening/verdict.js`** — now covered directly by
+  `lib/screening/verdict.test.js`: the score threshold and the guard that holds a
   verdict at "unlikely" when a young writer's only indicators are letter reversals.
-  This is the project's most defensible design decision; it is now exercised only
-  incidentally, through cases 7 and 15.
-- **Frontend components** — `PasswordField` and `ErrorAnalysis` have no tests. A
-  rendering bug in the latter is indistinguishable from a wrong analysis.
-- **`middleware.js`** — route protection: anonymous requests redirected, API routes
-  answered with JSON 401, session token refreshed. The app's only auth boundary.
+- ✅ **`lib/nlp/` (PS4)** — `analyze`, `classify`, `gec`, `lexicon` and `tokenize`
+  now have colocated suites. The remaining six modules (`g2p`, `phonemes`,
+  `morphology`, `align`, `taxonomy`, `persist`) are still exercised only through
+  those five.
+- ✅ **The error-analysis route** — `app/api/analyze-text/route.test.js`.
+- ✅ **Auth server actions** — `app/login/actions.test.js`, beyond what cases 1-6
+  require.
+
+Still open, and worth knowing about before the final report, whose rubric asks for
+boundary cases, negative cases, and both frontend and backend unit testing:
+
+- **Frontend components** — `PasswordField`, `ErrorAnalysis`, `JourneyBoard` and
+  `AddStudentForm` have no tests. A rendering bug in `ErrorAnalysis` is
+  indistinguishable from a wrong analysis. This is the largest remaining gap, and it
+  is blocked on a decision rather than on effort: `vitest.config.mjs` deliberately
+  sets `environment: "node"` with the reasoning that "a jsdom global would only hide
+  an accidental browser dependency". Component tests need `jsdom` plus
+  `@testing-library/react`, neither of which is installed, and reversing that
+  documented choice should be deliberate.
+- ✅ **`middleware.js`** — now covered directly by `middleware.test.js`: anonymous
+  requests redirected, API routes answered with JSON 401, and redirects built from
+  `nextUrl.clone()` so a forged `Host` header cannot send the user off-site.
 - **Error paths on the screening route** — oversized upload, unsupported file type,
-  anonymous caller, unparseable model response, repository failure.
-- **`lib/nlp/` (PS4)** — eleven modules, never tested. No row of the plan covers
-  them either.
+  unparseable model response, repository failure. The anonymous caller and the
+  missing/foreign `student_id` paths *are* now covered.
 
 ## Not in the plan at all
 

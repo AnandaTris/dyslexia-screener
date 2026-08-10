@@ -59,7 +59,7 @@ describe("login", () => {
     expect(sessions).toHaveLength(1);
     expect(sessions[0]).toMatchObject({ user: { email: REGISTERED.email } });
     expect(sessions[0].access_token).toBeTruthy();
-    expect(pathname).toBe("/");
+    expect(pathname).toBe("/dashboard");
   });
 
   it("rejects invalid credentials with no session", async () => {

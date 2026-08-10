@@ -44,7 +44,7 @@ export async function login(formData) {
     failWith(error, "/login");
   }
 
-  redirect("/");
+  redirect("/dashboard");
 }
 
 export async function signup(formData) {
@@ -73,7 +73,7 @@ export async function signup(formData) {
   // A session here means email confirmation is switched off, so the user is
   // already signed in and no mail was sent.
   if (data.session) {
-    redirect("/");
+    redirect("/dashboard");
   }
 
   redirect(

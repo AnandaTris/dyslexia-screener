@@ -73,10 +73,13 @@ export function writingSampleFile({
  * file under `file`, exactly as app/page.jsx posts it. Omit `file` to exercise
  * the "no image attached" path.
  */
-export function screeningRequest({ file, writerAge } = {}) {
+export function screeningRequest({ file, writerAge, studentId = "student-1" } = {}) {
   const form = new FormData();
   if (file) form.set("file", file);
   if (writerAge !== undefined) form.set("writerAge", String(writerAge));
+  // Every screening is filed against a student. Defaulted so existing tests read
+  // unchanged; pass `studentId: null` to exercise the missing-student path.
+  if (studentId) form.set("student_id", studentId);
 
   return new Request("http://localhost:3000/api/analyze", {
     method: "POST",
