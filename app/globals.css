@@ -321,6 +321,10 @@ h3 {
   border-left-color: var(--flag-strong);
 }
 
+.verdict-banner.v-monitor {
+  border-left-color: var(--flag-moderate);
+}
+
 .verdict-banner.v-unlikely {
   border-left-color: var(--ok-green);
 }
@@ -334,6 +338,10 @@ h3 {
 
 .v-likely .verdict-word {
   color: var(--flag-strong);
+}
+
+.v-monitor .verdict-word {
+  color: var(--flag-moderate);
 }
 
 .v-unlikely .verdict-word {

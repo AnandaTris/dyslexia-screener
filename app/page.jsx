@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { stashHandoff } from "../lib/screening/handoff";
+import { getScreeningOutcomeView } from "../lib/screening/presentation";
 import { createClient } from "../lib/supabase/client";
 import { signout } from "./login/actions";
 
@@ -115,6 +116,9 @@ export default function Home() {
 
   const parsedAge = writerAge === "" ? null : Number(writerAge);
   const isPdf = file?.type === "application/pdf";
+  const outcomeView = result?.isWritingSample
+    ? getScreeningOutcomeView(result)
+    : null;
 
   const analyze = async () => {
     if (!file) return;
@@ -371,14 +375,10 @@ export default function Home() {
               <h2>Screening report</h2>
 
               <div
-                className={`verdict-banner ${
-                  result.verdict === "likely" ? "v-likely" : "v-unlikely"
-                }`}
+                className={`verdict-banner ${outcomeView.className}`}
               >
                 <div className="verdict-word">
-                  {result.verdict === "likely"
-                    ? "Likely shows dyslexia indicators"
-                    : "Unlikely to show dyslexia indicators"}
+                  {outcomeView.heading}
                 </div>
                 <div className="gauge" aria-hidden="true">
                   <div
@@ -402,12 +402,9 @@ export default function Home() {
                 )}
                 <p className="verdict-reasoning">{result.verdictReasoning}</p>
 
-                {/* Only offered on a "likely" verdict, which already carries
-                    the score cutoff and the developmental safeguard — a sample
-                    held at "unlikely" should not be invited to go looking for a
-                    type. Needs a transcription to hand over; without one the
-                    analyser has nothing to work from. */}
-                {result.verdict === "likely" && result.transcription && (
+                {/* Concrete indicators are useful to inspect even when one
+                    sample does not cross the assessment threshold. */}
+                {outcomeView.showPatternAnalysis && (
                   <div className="verdict-actions">
                     <button
                       type="button"

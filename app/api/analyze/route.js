@@ -69,7 +69,8 @@ Rules:
 - verdict is your overall lean: "likely" means the sample shows enough dyslexia-associated patterns that a formal assessment is worth pursuing, "unlikely" means it does not.
 - likelihoodScore expresses how strongly the evidence supports the verdict. Anchor it to evidence density: 0-30 means little or no indicator evidence, 30-55 means weak or ambiguous evidence, 55-75 means clear evidence across 2-3 categories, 75-100 means strong convergent evidence across 4+ categories. A verdict of "likely" should normally have a score of 55 or above.
 - The score is an evidence-strength estimate from one sample, NOT a clinical probability that the writer has dyslexia. Never present it otherwise.
-- Young children (roughly under 7) commonly reverse letters as part of normal development. If the writing appears to be from a young child, lower the score, weight this heavily in caveats, and only output "likely" if there is evidence beyond reversals alone.
+- Do not infer the writer's age from handwriting, document labels, filenames, or visual appearance. Use only the age supplied in the request context.
+- Young children (roughly under 7) commonly reverse letters as part of normal development. For a supplied age under 7, discount reversal-only evidence. Do not globally lower the evidence score because a writer is young; score non-reversal indicators from their concrete evidence.
 - Be conservative. Only report an indicator when you can point to concrete evidence in the sample.`;
 
 export async function POST(req) {
@@ -160,12 +161,11 @@ export async function POST(req) {
 
     const fileBase64 = Buffer.from(await upload.arrayBuffer()).toString("base64");
 
-    // The system prompt discounts reversals for young writers, so a known age
-    // has to reach the model. Without it the model can only guess the age from
-    // the handwriting itself.
+    // Age comes from an explicit input or the selected student's record, never
+    // from the handwriting or document. It only narrows the reversal safeguard.
     const agePreamble = writerAge
-      ? `The writer is ${writerAge} years old. Weigh developmental expectations for that age.\n`
-      : "";
+      ? `The writer is ${writerAge} years old (from the request context). Use this only for the under-seven reversal-only safeguard; do not globally lower the evidence score.\n`
+      : "The writer's age was not provided. Do not infer it from the image.\n";
 
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
@@ -227,6 +227,7 @@ export async function POST(req) {
       verdict: decision.verdict,
       likelihoodScore: decision.score,
       verdictHeldReason: decision.reason,
+      screeningOutcome: decision.outcome,
     };
 
     // Persist the screening result for the signed-in user. A DB failure

@@ -25,7 +25,6 @@ statements:
 | **[`RAG_ORCHESTRATION.md`](RAG_ORCHESTRATION.md)** | How the learning assistant works internally |
 | **[`docs/NLP_ARCHITECTURE.md`](docs/NLP_ARCHITECTURE.md)** | The full PS4 pipeline write-up |
 | **[`tests/README.md`](tests/README.md)** | Test plan → test traceability, and the gaps |
-| **[`HANDOFF.md`](HANDOFF.md)** | Current state and what to pick up next |
 
 ---
 
@@ -109,12 +108,15 @@ run to several pages; all of them are read. Uploads are capped at 8 MB, because 
 is base64-encoded into the API request and the whole request has to stay under the
 inline-data limit.
 
-The verdict is not the model's own label. Gemini supplies the evidence — an
-evidence-strength score and a list of indicators — and `lib/screening/verdict.js` decides
-from it: `likely` needs a score of 55 or more, unless every indicator found is a letter
-reversal and the writer is under seven, in which case the verdict is held at `unlikely`
-and the reason is shown. Both thresholds are exported constants. This is a transparent
-rule over LLM-extracted features, not a trained classifier.
+The result is not the model's own label. Gemini supplies an evidence-strength score
+and a list of concrete indicators, and `lib/screening/verdict.js` applies the visible
+decision rule. The UI reports one of three outcomes: **further assessment
+recommended**, **indicators found — continue screening**, or **no clear indicators
+found in this sample**. The compatibility verdict stored in the database still uses
+`likely` / `unlikely`; a score of 55 is its assessment threshold, while explicit
+under-seven, reversal-only evidence is held below that recommendation. A model score
+without any indicators is treated as zero. This is a transparent rule over
+LLM-extracted features, not a trained or clinically validated classifier.
 
 **`/analysis` — the error pattern analyser (PS4).** Paste the student's writing exactly as
 they wrote it, mistakes and all. Runs the local NLP pipeline and reports the error
@@ -131,9 +133,11 @@ derived profile and the uploaded resources, each step citing where it came from.
 step off and the progress bar moves on both this page and the dashboard card. Rebuilding
 archives the old journey rather than deleting it, so past progress survives.
 
-The optional **writer's age** field is used only to judge whether letter reversals are
-developmentally expected (common under about seven). It is passed to the screening model
-and to the verdict rule.
+The optional **writer's age** field is used only to judge whether reversal-only
+evidence is developmentally expected (common under about seven). It is passed to the
+screening model and to the verdict rule. If the field is blank, the selected student's
+year of birth is used when available; otherwise the model is told not to infer age from
+the handwriting, filename, or document itself.
 
 ### What the error analysis gives you
 

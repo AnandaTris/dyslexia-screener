@@ -12,17 +12,15 @@
  * PredictionService — with the vision model (DyslexiaModel) and Supabase mocked.
  * `verifyFilePresent(image)` in the plan is the route's own file check.
  *
- * NOT COVERED, and worth knowing: `lib/screening/verdict.js` has no unit tests.
- * That module is the decision rule — the score threshold and the guard that holds
- * a verdict at "unlikely" when a young writer's only indicators are letter
- * reversals. It is the project's most defensible design choice and the thing that
- * makes the output a transparent rule rather than a raw model label. It is now
- * exercised only indirectly, through the happy path below and Integrated Test 3.
+ * The deterministic decision rule is tested directly in
+ * `lib/screening/verdict.test.js`; this file verifies that the route supplies the
+ * required context and returns that rule's user-facing outcome.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createFakeDyslexiaModel,
+  screeningJson,
   screeningRequest,
   writingSampleFile,
 } from "../support/model.js";
@@ -69,8 +67,7 @@ describe("UC3 + UC8 — Predict Dyslexia", () => {
     expect(response.status).toBe(200);
 
     // The model was called once, with the file bytes, its mime type, and the
-    // writer's age — the prompt discounts reversals for young writers, so the age
-    // has to reach it.
+    // writer's age, which is used only for the under-seven reversal safeguard.
     expect(mocks.model.value.calls).toHaveLength(1);
     const [imagePart, textPart] = mocks.model.value.calls[0].contents[0].parts;
     expect(imagePart.inlineData.mimeType).toBe("image/jpeg");
@@ -82,6 +79,43 @@ describe("UC3 + UC8 — Predict Dyslexia", () => {
     expect(body.likelihoodScore).toBe(72);
     expect(body.transcription).toContain("The dog ran");
     expect(body.indicators).toHaveLength(2);
+  });
+
+  it("does not let the model infer or globally discount an omitted writer age", async () => {
+    const response = await POST(screeningRequest({ file: writingSampleFile() }));
+
+    expect(response.status).toBe(200);
+    const request = mocks.model.value.calls[0];
+    const textPart = request.contents[0].parts[1];
+
+    expect(textPart.text).toMatch(/writer's age was not provided/i);
+    expect(request.config.systemInstruction).toMatch(
+      /do not infer.*age.*handwriting.*document labels/i,
+    );
+    expect(request.config.systemInstruction).toMatch(
+      /do not globally lower.*score.*young/i,
+    );
+  });
+
+  it("returns a continue-screening outcome for low scores with concrete indicators", async () => {
+    mocks.model.value = createFakeDyslexiaModel({
+      screening: screeningJson({
+        verdict: "unlikely",
+        likelihoodScore: 40,
+      }),
+    });
+
+    const response = await POST(
+      screeningRequest({ file: writingSampleFile(), writerAge: 6 }),
+    );
+    const body = await response.json();
+
+    expect(body.verdict).toBe("unlikely");
+    expect(body.screeningOutcome).toEqual({
+      code: "continue_screening",
+      heading: "Indicators found — continue screening",
+      allowPatternAnalysis: true,
+    });
   });
 
   it("error: no image attached, so the caller is alerted to attach a file", async () => {
