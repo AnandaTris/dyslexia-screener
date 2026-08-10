@@ -25,7 +25,6 @@ statements:
 | **[`RAG_ORCHESTRATION.md`](RAG_ORCHESTRATION.md)** | How the learning assistant works internally |
 | **[`docs/NLP_ARCHITECTURE.md`](docs/NLP_ARCHITECTURE.md)** | The full PS4 pipeline write-up |
 | **[`tests/README.md`](tests/README.md)** | Test plan → test traceability, and the gaps |
-| **[`HANDOFF.md`](HANDOFF.md)** | Current state and what to pick up next |
 
 ---
 
