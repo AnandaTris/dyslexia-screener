@@ -69,6 +69,39 @@ protection away for no benefit.
 `config.py` reads `.env` relative to the **working directory**, so uvicorn must be
 started from `rag-service/`. `npm run dev:rag` already does this.
 
+#### The service token
+
+`RAG_SERVICE_TOKEN` / `SERVICE_TOKEN` is a shared secret that proves a request to the
+Python service came from your Next.js server and not from anything else on the machine.
+The service has no login of its own, listens on port 8000, and holds the service-role
+key — so without the check, anything that could reach that port could write to the
+document corpus through `/ingest`. Every endpoint except `/health` requires it, sent as
+the `X-Service-Token` header (`lib/ragService.js`) and compared in `app/main.py` with
+`hmac.compare_digest`, which is timing-safe. It fails closed: an unset token rejects
+*every* request rather than waving them through, which is why a missing
+`rag-service/.env` gives 401s rather than an unprotected service.
+
+It carries no user identity. It says "the trusted web app sent this", not "this is a
+particular therapist's student" — which learner a request concerns is Supabase auth and
+RLS in the Next.js layer, using the anon key.
+
+**You invent it. No vendor issues it.** Any long random string works:
+
+```bash
+openssl rand -hex 32
+```
+
+Paste the same output into both files. The only requirement is that the two agree *on
+the machine running them* — a stray trailing space is enough to break it, and the 401 it
+causes surfaces in the UI as "the learning assistant is offline".
+
+**Each machine can hold its own.** Nothing persists the token — it is only ever compared
+in-flight, never stored in Supabase or written into the corpus — so a second laptop can
+use a completely different one, and rotating means editing two lines and restarting
+uvicorn. No re-ingestion, no migration. The `SUPABASE_*` values sitting next to it are
+the opposite case: they identify a real project, are issued by Supabase, and must be
+identical everywhere.
+
 ### 3. Database
 
 Supabase dashboard → **SQL Editor** → **New query**, run these **in order**. All four are
@@ -97,8 +130,12 @@ Then confirm they actually landed:
 
 ```bash
 cd rag-service
-.venv/Scripts/python.exe scripts/check_schema.py     # macOS/Linux: .venv/bin/python
+python scripts/check_schema.py
 ```
+
+That runs inside the `rag-service` virtualenv, so it needs
+[step 5](#5-the-learning-assistant-optional) done first — do that one now if you are
+working straight down this list, or come back here afterwards.
 
 It prints every table with its row count and exercises the `match_document_chunks`
 function — names and counts only, never a key, so the output is safe to paste into an
@@ -124,21 +161,46 @@ need to re-run this.
 
 Only needed for chat and journey to answer.
 
+Both models run locally through Ollama, so install it first. On macOS the Homebrew
+formula does **not** start on its own; the `.app` from ollama.com does.
+
 ```bash
-# once: install Ollama from https://ollama.com, then
+# macOS
+brew install ollama
+brew services start ollama          # or run `ollama serve` in its own terminal
+
+# Windows and Linux: installer from https://ollama.com
+
 ollama pull nomic-embed-text
 ollama pull llama3.2:3b       # or llama3.1:8b if you have 6-8 GB of VRAM
+```
 
+**Whatever you pull must match `GENERATION_MODEL` in `rag-service/.env`.** `config.py`
+defaults to `llama3.1:8b`, so pulling the 3b model and leaving that line unset asks
+Ollama for weights you do not have, and every answer fails.
+
+Then the Python environment. Activating the virtualenv is what makes `python` mean the
+one in `.venv`, and every Python command in this file assumes you have:
+
+```bash
 cd rag-service
 python -m venv .venv
-.venv/Scripts/python.exe -m pip install -r requirements.txt
+
+source .venv/bin/activate     # macOS, Linux
+.venv\Scripts\activate        # Windows
+
+python -m pip install -r requirements.txt
 ```
+
+`npm run dev:rag` finds the right interpreter on its own and needs no activation —
+`scripts/venv-python.mjs` resolves `.venv/bin/python` or `.venv\Scripts\python.exe`
+depending on the platform.
 
 Then give it something to be grounded in — with an empty corpus the assistant truthfully
 answers that it has no material:
 
 ```bash
-.venv/Scripts/python.exe scripts/ingest_file.py ./phonics.pdf \
+python scripts/ingest_file.py ./phonics.pdf \
     --title "Phonics Guide" --doc-type guide --profiles phonological
 ```
 
@@ -163,8 +225,9 @@ npm run dev          # Next.js only, port 3000
 npm run dev:rag      # uvicorn --reload from rag-service/, port 8000
 ```
 
-Ollama runs as a background service and does not need starting by hand. Confirm it is
-answering with `curl http://127.0.0.1:11434/api/tags`.
+Ollama normally runs as a background service and does not need starting by hand — the
+exception is a Homebrew install, which stays stopped until `brew services start ollama`.
+Confirm it is answering with `curl http://127.0.0.1:11434/api/tags`.
 
 Create an account at `/signup`; login lands on `/dashboard`.
 
@@ -191,7 +254,8 @@ npm run test:all         # everything
 
 ```bash
 cd rag-service
-.venv/Scripts/python.exe -m pytest -q
+source .venv/bin/activate     # Windows: .venv\Scripts\activate
+python -m pytest -q
 ```
 
 Last verified run (2026-08-07): **224 passed across 32 files** (JS, ~9 s), **13 passed**
@@ -329,6 +393,21 @@ errors (their/there, to/too) were not detected. Check your network and re-run
 `npm run warm:nlp`.
 
 ### Tooling
+
+**`command not found: ollama`.** Not installed on this machine — see
+[step 5](#5-the-learning-assistant-optional). Everything except chat and journey still
+works without it.
+
+**Ollama is installed but nothing answers on port 11434.** On macOS, `brew install
+ollama` does not start anything; run `brew services start ollama`, or `ollama serve` in
+its own terminal.
+
+**`npm run dev:all` starts `[web]` but `[rag]` exits immediately.** The `rag-service`
+virtualenv is missing or was built for another OS — a `.venv` copied from a Windows
+machine has `Scripts/`, not `bin/`, and none of its paths resolve here. The error names
+the paths it looked for. Delete `.venv` and rebuild it per
+[step 5](#5-the-learning-assistant-optional); it is gitignored and holds nothing you
+wrote.
 
 **`ollama list` prints `Error: timed out waiting for server to start`.** Usually the
 server is running fine and the CLI is racing an instance that already exists. Check over

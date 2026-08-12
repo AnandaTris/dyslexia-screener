@@ -63,23 +63,41 @@ generation model run locally through Ollama. Gemini is used for PS1 vision only.
 
 ```bash
 npm install
-cp .env.example .env           # then fill in your keys
+cp .env.example .env                            # root: read by Next.js
+cp rag-service/.env.example rag-service/.env    # read by the Python service only
 npm run warm:nlp               # one-time, ~1 min: downloads and caches the NLP model
 npm run dev:all
 ```
+
+Fill in **both** env files before starting; they deliberately hold different keys. One
+value in them is yours to invent rather than to look up — the service token that lets the
+web app talk to the Python service. Generate it with `openssl rand -hex 32` and write the
+same string into `RAG_SERVICE_TOKEN` (root) and `SERVICE_TOKEN` (`rag-service/`). It only
+has to match between those two files on the machine running them, so every machine can
+hold its own. [What it is for](WORKFLOW.md#the-service-token).
 
 Apply the database schema and open <http://localhost:3000>. The chat and journey pages
 will say the assistant is offline until you also run the Python service — everything else
 works. **Full instructions: [`WORKFLOW.md`](WORKFLOW.md).**
 
-To use the assistant you also need Ollama running and a corpus ingested. A starter corpus
-ships in [`rag-service/corpus/`](rag-service/corpus); load it once:
+To use the assistant you also need Ollama running, the Python environment built, and a
+corpus ingested. A starter corpus ships in
+[`rag-service/corpus/`](rag-service/corpus); load it once:
 
 ```bash
+# macOS: brew install ollama && brew services start ollama
+# Windows, Linux: installer from https://ollama.com
+ollama pull nomic-embed-text
+ollama pull llama3.2:3b        # must match GENERATION_MODEL in rag-service/.env
+
 cd rag-service
-.venv/Scripts/python.exe scripts/ingest_file.py corpus/understanding-your-results.txt \
+python -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
+python -m pip install -r requirements.txt
+
+python scripts/ingest_file.py corpus/understanding-your-results.txt \
     --title "Understanding your screening results" --doc-type guide
-.venv/Scripts/python.exe scripts/ingest_file.py corpus/surface-pattern.txt \
+python scripts/ingest_file.py corpus/surface-pattern.txt \
     --title "The surface pattern" --doc-type guide --profiles surface
 # ...and the phonological and visual-spatial files, tagged to match
 ```
@@ -324,6 +342,7 @@ tests/
 
 middleware.js                  session refresh + auth redirects
 scripts/warm-nlp.mjs           model warm-up and smoke test
+scripts/venv-python.mjs        resolves the rag-service venv interpreter per OS
 vitest.config.mjs              test runner configuration
 supabase/*.sql                 database schema (screenings, error_analyses, RAG, students)
 docs/NLP_ARCHITECTURE.md       full PS4 write-up

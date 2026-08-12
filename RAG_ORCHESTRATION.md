@@ -155,7 +155,8 @@ which is why there is no material-download feature — there is nothing to serve
 
 ```bash
 cd rag-service
-.venv/Scripts/python.exe scripts/ingest_file.py ./phonics.pdf \
+source .venv/bin/activate     # Windows: .venv\Scripts\activate
+python scripts/ingest_file.py ./phonics.pdf \
     --title "Phonics Guide" --doc-type guide --profiles phonological
 ```
 
@@ -252,7 +253,7 @@ changing `EMBEDDING_MODEL` to a model of a different width requires a migration.
 Verify the function and the six tables are live with:
 
 ```bash
-cd rag-service && .venv/Scripts/python.exe scripts/check_schema.py
+cd rag-service && python scripts/check_schema.py     # with .venv activated
 ```
 
 A `PGRST202` error naming `match_document_chunks` means this file was never applied. The
@@ -360,7 +361,8 @@ on top of is the wrong limit.
 
 ```bash
 cd rag-service
-.venv/Scripts/python.exe -m pytest -q
+source .venv/bin/activate     # Windows: .venv\Scripts\activate
+python -m pytest -q
 ```
 
 Last verified: **34 passed, 1 skipped** (the skip is the material-download feature that

@@ -32,8 +32,10 @@ permanently red default suite is one nobody reads. Run them explicitly with
 
 ```bash
 cd rag-service
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # once
-.venv/bin/python -m pytest -q      # 53 tests: 52 pass, 1 skipped
+python3 -m venv .venv                            # once
+source .venv/bin/activate                        # Windows: .venv\Scripts\activate
+python -m pip install -r requirements.txt        # once
+python -m pytest -q                # 53 tests: 52 pass, 1 skipped
 ```
 
 `tests/unit` mocks each collaborator, as the plan's Mock column specifies.
