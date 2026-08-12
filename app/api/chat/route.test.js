@@ -7,6 +7,7 @@ vi.mock("../../../lib/ragService", () => ({ callRagService: vi.fn() }));
 import { POST } from "./route.js";
 import { createClient } from "../../../lib/supabase/server";
 import { callRagService } from "../../../lib/ragService";
+import { resetRateLimits } from "../../../lib/rateLimit";
 
 function makeSupabase({ user }) {
   const inserted = [];
@@ -31,7 +32,12 @@ function req(body) {
   return { json: async () => body };
 }
 
-beforeEach(() => vi.clearAllMocks());
+// The limiter holds module-level state, so without this each test would inherit
+// whatever budget the previous one spent.
+beforeEach(() => {
+  vi.clearAllMocks();
+  resetRateLimits();
+});
 
 describe("POST /api/chat", () => {
   it("401 when not signed in", async () => {
@@ -44,6 +50,56 @@ describe("POST /api/chat", () => {
     createClient.mockResolvedValue(makeSupabase({ user: { id: "u1" } }));
     const res = await POST(req({ question: "   " }));
     expect(res.status).toBe(400);
+  });
+
+  it("400 when the question is longer than the cap", async () => {
+    createClient.mockResolvedValue(makeSupabase({ user: { id: "u1" } }));
+    const res = await POST(req({ question: "x".repeat(2_001) }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/longer than 2000 characters/i);
+    // never reached the model
+    expect(callRagService).not.toHaveBeenCalled();
+  });
+
+  it("accepts a question exactly at the cap", async () => {
+    createClient.mockResolvedValue(makeSupabase({ user: { id: "u1" } }));
+    callRagService.mockResolvedValue({ ok: true, data: { answer: "A" } });
+    const res = await POST(req({ question: "x".repeat(2_000) }));
+    expect(res.status).toBe(200);
+  });
+
+  it("429s once the per-user budget is spent, with a Retry-After header", async () => {
+    createClient.mockResolvedValue(makeSupabase({ user: { id: "u1" } }));
+    callRagService.mockResolvedValue({ ok: true, data: { answer: "A" } });
+
+    for (let i = 0; i < 10; i++) {
+      expect((await POST(req({ question: "help" }))).status).toBe(200);
+    }
+
+    const res = await POST(req({ question: "help" }));
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get("Retry-After"))).toBeGreaterThan(0);
+    expect(callRagService).toHaveBeenCalledTimes(10);
+  });
+
+  it("budgets each user separately", async () => {
+    createClient.mockResolvedValue(makeSupabase({ user: { id: "u1" } }));
+    callRagService.mockResolvedValue({ ok: true, data: { answer: "A" } });
+    for (let i = 0; i < 10; i++) await POST(req({ question: "help" }));
+    expect((await POST(req({ question: "help" }))).status).toBe(429);
+
+    createClient.mockResolvedValue(makeSupabase({ user: { id: "u2" } }));
+    expect((await POST(req({ question: "help" }))).status).toBe(200);
+  });
+
+  // A rejected request costs no model time, so charging it would let a client
+  // bug lock a user out of the thing that still works.
+  it("does not spend budget on requests that never reach the model", async () => {
+    createClient.mockResolvedValue(makeSupabase({ user: { id: "u1" } }));
+    for (let i = 0; i < 20; i++) await POST(req({ question: "   " }));
+
+    callRagService.mockResolvedValue({ ok: true, data: { answer: "A" } });
+    expect((await POST(req({ question: "help" }))).status).toBe(200);
   });
 
   it("503 with offline flag when the service is down", async () => {

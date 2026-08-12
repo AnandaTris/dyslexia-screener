@@ -3,6 +3,13 @@ import { createClient } from "../../../lib/supabase/server";
 import { callRagService } from "../../../lib/ragService";
 import { loadActiveJourney } from "../../../lib/journey";
 import { loadStudent } from "../../../lib/students";
+import { rateLimit } from "../../../lib/rateLimit";
+
+// Building a journey measures 72-122 s — the heaviest thing the machine does,
+// and several times a chat answer. Five in five minutes is beyond the pace a
+// therapist could reach anyway, since each build occupies most of two minutes.
+// GET is deliberately not limited: it reads the database and never calls a model.
+const JOURNEY_BUDGET = { limit: 5, windowMs: 5 * 60_000 };
 
 const UNAUTHENTICATED = { error: "You must be signed in." };
 const NO_STUDENT = { error: "Pick a student first." };
@@ -60,6 +67,17 @@ export async function POST(request) {
         error: `Run a writing screening for ${student.display_name} first — the journey is built from that profile.`,
       },
       { status: 400 }
+    );
+  }
+
+  // Charged immediately before the model call, so the rejections above — no
+  // student, no profile — cost the caller nothing. Keyed by user, not by
+  // student, or a caseload of ten students would be ten separate budgets.
+  const limit = rateLimit(`journey:${user.id}`, JOURNEY_BUDGET);
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Too many journeys built in a short time. Please wait a moment and try again." },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
     );
   }
 

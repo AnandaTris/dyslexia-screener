@@ -7,6 +7,7 @@ import { GET, POST } from "./route.js";
 import { createClient } from "../../../lib/supabase/server";
 import { callRagService } from "../../../lib/ragService";
 import { fakeSupabase } from "../../../tests/support/queryBuilder.js";
+import { resetRateLimits } from "../../../lib/rateLimit";
 
 const PROFILE = { primary_label: "phonological", weights: { phonological: 3 } };
 const STUDENT = { id: "st1", display_name: "Ana", birth_year: 2017 };
@@ -29,7 +30,12 @@ function withProfile(extra = {}) {
   });
 }
 
-beforeEach(() => vi.clearAllMocks());
+// The limiter holds module-level state, so without this each test would inherit
+// whatever budget the previous one spent.
+beforeEach(() => {
+  vi.clearAllMocks();
+  resetRateLimits();
+});
 
 describe("GET /api/journey", () => {
   it("401 when not signed in", async () => {
@@ -114,6 +120,42 @@ describe("POST /api/journey", () => {
     const res = await POST(postReq());
     expect(res.status).toBe(503);
     expect((await res.json()).offline).toBe(true);
+  });
+
+  it("429s once the per-user budget is spent, with a Retry-After header", async () => {
+    createClient.mockResolvedValue(withProfile());
+    callRagService.mockResolvedValue({ ok: true, data: { steps: [] } });
+
+    for (let i = 0; i < 5; i++) {
+      expect((await POST(postReq())).status).toBe(200);
+    }
+
+    const res = await POST(postReq());
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get("Retry-After"))).toBeGreaterThan(0);
+    expect(callRagService).toHaveBeenCalledTimes(5);
+  });
+
+  // One budget per therapist, not per student — otherwise a caseload of ten
+  // students is ten budgets and the limit means nothing.
+  it("charges one budget across a caseload", async () => {
+    createClient.mockResolvedValue(withProfile());
+    callRagService.mockResolvedValue({ ok: true, data: { steps: [] } });
+    for (let i = 0; i < 5; i++) await POST(postReq({ student_id: `st${i}` }));
+    expect((await POST(postReq({ student_id: "st9" }))).status).toBe(429);
+  });
+
+  // GET is a database read and never touches the model, so exhausting the POST
+  // budget must not take the board offline.
+  it("does not limit GET", async () => {
+    createClient.mockResolvedValue(withProfile());
+    callRagService.mockResolvedValue({ ok: true, data: { steps: [] } });
+    for (let i = 0; i < 5; i++) await POST(postReq());
+    expect((await POST(postReq())).status).toBe(429);
+
+    for (let i = 0; i < 10; i++) {
+      expect((await GET(getReq())).status).toBe(200);
+    }
   });
 
   it("returns the service note and persists nothing when no material is ingested", async () => {

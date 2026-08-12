@@ -2,8 +2,19 @@ import { NextResponse } from "next/server";
 import { createClient } from "../../../lib/supabase/server";
 import { callRagService } from "../../../lib/ragService";
 import { MODEL_HISTORY_TURNS, loadRecentMessages } from "../../../lib/chat";
+import { rateLimit } from "../../../lib/rateLimit";
 
 const MODES = ["grounded", "plain"];
+
+// A warm grounded answer measures 16-20 s and holds the local model for all of
+// it, so a legitimate user cannot exceed about three a minute by hand. Ten
+// leaves that untouched while stopping a script from queueing hundreds.
+const CHAT_BUDGET = { limit: 10, windowMs: 60_000 };
+
+// `/api/analyze-text` caps a whole writing sample at 20,000 characters. A
+// question is not a sample: 2,000 is far more than anyone types, and the length
+// matters because the text becomes prompt the local model pays to read.
+const MAX_QUESTION_CHARS = 2_000;
 
 // An unknown mode must never silently resolve to the ungrounded path. The safe
 // value is the one that cites its sources, so anything unrecognised — a stale
@@ -36,7 +47,25 @@ export async function POST(req) {
   if (!question || typeof question !== "string" || !question.trim()) {
     return NextResponse.json({ error: "A question is required." }, { status: 400 });
   }
+  if (question.length > MAX_QUESTION_CHARS) {
+    return NextResponse.json(
+      { error: `Question is longer than ${MAX_QUESTION_CHARS} characters. Please shorten it.` },
+      { status: 400 }
+    );
+  }
   const mode = normaliseMode(body?.mode);
+
+  // Charged here rather than at the top of the handler so that a malformed or
+  // over-long request — which never reaches the model — does not spend the
+  // caller's budget. What is being rationed is model time, and everything above
+  // this line is a cheap rejection.
+  const limit = rateLimit(`chat:${user.id}`, CHAT_BUDGET);
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Too many questions in a short time. Please wait a moment and try again." },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+    );
+  }
 
   const { data: profileRow } = await supabase
     .from("learner_profiles")
