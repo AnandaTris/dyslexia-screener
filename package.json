@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "dev:rag": "cd rag-service && .venv\\Scripts\\python.exe -m uvicorn app.main:app --reload --port 8000",
+    "dev:rag": "cd rag-service && node ../scripts/venv-python.mjs -m uvicorn app.main:app --reload --port 8000",
     "dev:all": "concurrently -k -n web,rag -c cyan,magenta \"npm:dev\" \"npm:dev:rag\"",
     "build": "next build",
     "start": "next start",
