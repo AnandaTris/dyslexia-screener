@@ -62,3 +62,4 @@ Desktop.ini
 # session in a way that adds noise to every diff. It stays in the working tree —
 # untracked means it is yours alone, and a fresh clone will not have it.
 /HANDOFF.md
+.gstack/
