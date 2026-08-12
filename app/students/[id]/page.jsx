@@ -19,9 +19,13 @@ export default async function StudentPage({ params }) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  // `params` is a promise from Next 15 onward, as `searchParams` already was on
+  // the login and signup pages.
+  const { id } = await params;
+
   // loadStudent scopes by therapist_id, so another therapist's id resolves to
   // null and lands here as a 404 rather than an empty-looking page.
-  const student = await loadStudent(supabase, user.id, params.id);
+  const student = await loadStudent(supabase, user.id, id);
   if (!student) notFound();
 
   const { data: profileRow } = await supabase
