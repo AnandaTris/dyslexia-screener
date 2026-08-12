@@ -1,7 +1,24 @@
 :root {
+  /* DAS brand, sampled from das.org.sg: a vivid red over a near-black navy.
+     Adopted as *chrome* only — masthead, primary actions, focus. The indicator
+     colours below stay on their own scale, because red already means "this is a
+     dyslexia indicator" in the output and a brand that spends the same colour
+     on a button would make the two unreadable together. DAS's vivid red and the
+     muted brick of --flag-strong differ in saturation enough to stay distinct.
+
+     --brand-red is the accent; --brand-red-deep is what text sits on. White on
+     #e91626 measures about 4.0:1, under the 4.5:1 AA threshold, so the darker
+     #c22933 (about 5.3:1) carries anything with a label on it. */
+  --brand-red: #e91626;
+  --brand-red-deep: #c22933;
+  --brand-red-press: #78050d;
+
+  /* DAS's own navy is #001634. Lifted slightly here: against the off-white
+     paper below, the pure value runs about 17:1, and that hard a contrast is
+     reported as uncomfortable by many dyslexic readers. This sits near 13:1. */
   --paper: #fafaf7;
   --paper-deep: #f1f0ea;
-  --ink: #1b2a4a;
+  --ink: #0f2038;
   --ink-soft: #4a5a7a;
   --rule-blue: #c9d6e8;
   --margin-red: #d96a5a;
@@ -54,6 +71,10 @@ h3 {
   justify-content: space-between;
   gap: 8px 16px;
   margin-bottom: 8px;
+  /* The one place the vivid DAS red is spent at full strength. It carries no
+     meaning, so it sits on the page furniture rather than on any result. */
+  border-top: 3px solid var(--brand-red);
+  padding-top: 14px;
 }
 
 .masthead-main {
@@ -225,12 +246,12 @@ h3 {
 }
 
 .btn-primary {
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--brand-red-deep);
+  color: #fff;
 }
 
 .btn-primary:hover {
-  background: #24365c;
+  background: var(--brand-red-press);
 }
 
 .btn-primary:disabled {
