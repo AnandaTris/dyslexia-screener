@@ -162,7 +162,7 @@ export default function Home() {
    * with an empty box is a worse experience but not a broken one.
    */
   const identifyPattern = () => {
-    stashHandoff({ text: result?.transcription, writerAge: parsedAge });
+    stashHandoff({ text: result?.transcription, writerAge: parsedAge, studentId });
     router.push("/analysis");
   };
 

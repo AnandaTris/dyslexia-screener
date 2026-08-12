@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { analyzeWriting } from "../../../lib/nlp/analyze";
 import { createClient } from "../../../lib/supabase/server";
 import { persistErrorAnalysis } from "../../../lib/nlp/persist";
+import { loadStudent, ageFromBirthYear } from "../../../lib/students";
 
 // The NLP pipeline runs in-process and needs the Node runtime for
 // onnxruntime-node; the Edge runtime cannot load the native binary.
@@ -46,10 +47,30 @@ export async function POST(req) {
       );
     }
 
+    // An analysis now belongs to a student, for the same reason a screening
+    // does: a trend line is meaningless until you know whose errors it is
+    // plotting. Resolved before analyzeWriting so a bad id costs nothing rather
+    // than a full grammar-model pass. loadStudent scopes by therapist, so
+    // another therapist's id comes back null and is answered 404.
+    const studentId = body.student_id;
+    if (!studentId || typeof studentId !== "string") {
+      return NextResponse.json(
+        { error: "Pick a student before analysing." },
+        { status: 400 },
+      );
+    }
+    const student = await loadStudent(supabase, user.id, studentId);
+    if (!student) {
+      return NextResponse.json({ error: "That student was not found." }, { status: 404 });
+    }
+
+    // A typed age wins; otherwise fall back to the student's year of birth, so
+    // the developmental reversal guard fires without depending on someone
+    // remembering to fill the field in. Same precedence as /api/analyze.
     const writerAge =
       Number.isFinite(body.writerAge) && body.writerAge > 0 && body.writerAge < 120
         ? Math.round(body.writerAge)
-        : null;
+        : ageFromBirthYear(student.birth_year);
 
     const analysis = await analyzeWriting(text, { writerAge, transcribed: false });
 
@@ -59,6 +80,7 @@ export async function POST(req) {
 
     await persistErrorAnalysis(supabase, {
       userId: user.id,
+      studentId: student.id,
       source: "text",
       sampleText: text,
       writerAge,

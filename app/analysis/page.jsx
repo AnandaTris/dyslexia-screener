@@ -36,12 +36,31 @@ export default function AnalysisPage() {
   const [error, setError] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [fromScreener, setFromScreener] = useState(false);
+  const [students, setStudents] = useState([]);
+  const [studentId, setStudentId] = useState("");
 
   useEffect(() => {
     const supabase = createClient();
     supabase.auth
       .getUser()
       .then(({ data }) => setUserEmail(data.user?.email ?? null));
+  }, []);
+
+  // RLS scopes this to the signed-in therapist, so no therapist_id filter is
+  // needed from the browser. Same read as the screener's picker.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("students")
+        .select("id, display_name, birth_year")
+        .order("display_name", { ascending: true });
+      if (!cancelled) setStudents(data ?? []);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   /**
@@ -59,8 +78,24 @@ export default function AnalysisPage() {
     if (!handoff) return;
     setSampleText(handoff.text);
     if (handoff.writerAge !== null) setWriterAge(String(handoff.writerAge));
+    if (handoff.studentId) setStudentId(handoff.studentId);
     setFromScreener(true);
   }, []);
+
+  /**
+   * Fills the age from the chosen student's year of birth, but only into an
+   * empty field. The screener overwrites unconditionally because nothing
+   * upstream of it can have set the value; here a handoff may have carried an
+   * age the educator typed by hand, and recomputing from birth year would throw
+   * that correction away.
+   */
+  useEffect(() => {
+    if (writerAge !== "") return;
+    const student = students.find((s) => s.id === studentId);
+    if (!student?.birth_year) return;
+    const age = new Date().getFullYear() - Number(student.birth_year);
+    if (age >= 0) setWriterAge(String(age));
+  }, [studentId, students, writerAge]);
 
   const trimmed = sampleText.trim();
   const parsedAge = writerAge === "" ? null : Number(writerAge);
@@ -68,6 +103,10 @@ export default function AnalysisPage() {
   const analyze = async () => {
     if (trimmed.length < 20) {
       setError("Paste at least 20 characters of the student's writing.");
+      return;
+    }
+    if (!studentId) {
+      setError("Choose which student wrote this before analysing.");
       return;
     }
     setLoading(true);
@@ -78,7 +117,11 @@ export default function AnalysisPage() {
       const res = await fetch("/api/analyze-text", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: sampleText, writerAge: parsedAge })
+        body: JSON.stringify({
+          text: sampleText,
+          writerAge: parsedAge,
+          student_id: studentId,
+        })
       });
 
       const data = await readJson(res);
@@ -170,6 +213,33 @@ export default function AnalysisPage() {
               : "50 words or more gives a more stable pattern."}
           </p>
 
+          <label className="auth-label" htmlFor="student">
+            Student
+          </label>
+          <select
+            id="student"
+            className="auth-input"
+            value={studentId}
+            onChange={(e) => setStudentId(e.target.value)}
+            required
+          >
+            <option value="">Choose a student…</option>
+            {students.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.display_name}
+              </option>
+            ))}
+          </select>
+          <p className="auth-hint">
+            {students.length === 0 ? (
+              <>
+                No students yet — <Link href="/students">add one first</Link>.
+              </>
+            ) : (
+              "This sample joins that student's error trend."
+            )}
+          </p>
+
           <label className="auth-label" htmlFor="writer-age">
             Writer&apos;s age (optional)
           </label>
@@ -191,7 +261,7 @@ export default function AnalysisPage() {
             <button
               className="btn btn-primary"
               onClick={analyze}
-              disabled={loading || trimmed.length < 20}
+              disabled={loading || trimmed.length < 20 || !studentId}
             >
               {loading ? (
                 <>

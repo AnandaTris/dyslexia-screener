@@ -78,7 +78,7 @@ describe("Integrated Test 4 — Analyse Writing Sample", () => {
   it("happy: the pipeline classifies the errors and the profile is stored and displayed", async () => {
     vi.stubEnv("NLP_GEC", "off");
 
-    const response = await POST(submit({ text: WRITING_SAMPLE, writerAge: 9 }));
+    const response = await POST(submit({ text: WRITING_SAMPLE, writerAge: 9, student_id: "student-1" }));
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -103,6 +103,10 @@ describe("Integrated Test 4 — Analyse Writing Sample", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       user_id: EDUCATOR.id,
+      // The student resolved at the front of the route reaches the stored row,
+      // which is the link the trend charts read. user_id alone would file this
+      // under the therapist and leave it outside every learner's trend.
+      student_id: "student-1",
       source: "text",
       sample_text: WRITING_SAMPLE,
       writer_age: 9,
@@ -118,7 +122,7 @@ describe("Integrated Test 4 — Analyse Writing Sample", () => {
   it("error: no sample submitted, so nothing is analysed and nothing is stored", async () => {
     vi.stubEnv("NLP_GEC", "off");
 
-    const response = await POST(submit({ writerAge: 9 }));
+    const response = await POST(submit({ writerAge: 9, student_id: "student-1" }));
 
     expect(response.status).toBe(400);
     expect((await response.json()).error).toBe("Request must include a text field.");
@@ -128,7 +132,7 @@ describe("Integrated Test 4 — Analyse Writing Sample", () => {
   it("error: the T5 stage fails, so the analysis degrades and says so", async () => {
     vi.stubEnv("NLP_GEC", "on");
 
-    const response = await POST(submit({ text: WRITING_SAMPLE, writerAge: 9 }));
+    const response = await POST(submit({ text: WRITING_SAMPLE, writerAge: 9, student_id: "student-1" }));
     const { analysis } = await response.json();
 
     // Deviation (2): the flow continues on the remaining layers.
