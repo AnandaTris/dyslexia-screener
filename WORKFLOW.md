@@ -104,7 +104,7 @@ identical everywhere.
 
 ### 3. Database
 
-Supabase dashboard → **SQL Editor** → **New query**, run these **in order**. All four are
+Supabase dashboard → **SQL Editor** → **New query**, run these **in order**. All six are
 safe to re-run.
 
 | # | File | Creates |
@@ -113,14 +113,25 @@ safe to re-run.
 | 2 | `supabase/error_analyses.sql` | `error_analyses` (PS4) |
 | 3 | `supabase/rag_schema.sql` | pgvector, the six RAG tables, RLS, and `match_document_chunks` (PS3) |
 | 4 | `supabase/students.sql` | `students`, `student_id` on three tables, the backfill, and the `learner_profiles` re-key |
+| 5 | `supabase/student_accounts.sql` | `students.auth_user_id` + `login_email`, and the four RLS policies that scope a student login |
+| 6 | `supabase/error_analyses_student.sql` | `student_id` on `error_analyses` — **required by the trend charts** |
 
-**4 must come last.** It re-parents tables that 1 and 3 create, and it backfills whatever
-rows already exist, so running it against a project that has not had the others applied
-will do the wrong thing.
+**4 must come before 5 and 6, and after 1–3.** It re-parents tables that 1 and 3 create and
+backfills whatever rows already exist, so running it against a project that has not had the
+others applied will do the wrong thing; 5 and 6 both add columns to tables 4 owns or
+re-parents.
 
 Unlike the others, **4 runs inside a transaction** — if any statement fails, the whole
 migration rolls back and the database is untouched. It ends with a verification query;
 expect `students` ≥ 1 and both `*_without_student` columns to be `0`.
+
+**Skipping 6 is the failure that looks like a bug.** Without it `error_analyses` has no
+`student_id`, so `/dashboard` and `/students/[id]` cannot read the column their trend query
+selects, and the caseload roll-up and the per-student charts come back empty or error.
+Unlike 4, it deliberately does **not** backfill: an analysis recorded before it carries a
+therapist and a block of text, and nothing identifying which learner wrote it, so guessing
+would put one child's errors on another child's trend line. Rows from before the migration
+stay unattributed and never appear in a trend.
 
 It contains the one irreversible change in the project: `learner_profiles`'s primary key
 moves from `user_id` to `student_id`. That is what allows a therapist to hold more than
