@@ -28,6 +28,23 @@
   --ok-green: #2e7d5b;
   --card-border: #dcdad2;
 
+  /* Error categories. A NOMINAL scale — these say which kind of error, never
+     how bad it is. That distinction is why the set is spread around the wheel
+     instead of running pale-to-dark: a sequential ramp would imply an ordering
+     between phonological and orthographic errors that does not exist.
+
+     Two of them intentionally reuse the flag hues they already sat on in the
+     report chips, and the rest are spaced far enough apart in hue to stay
+     separable side by side in a stacked band. All measure at least 4.5:1 on
+     --paper, so a label can sit on any of them. */
+  --cat-phonological: var(--flag-strong);
+  --cat-orthographic: var(--flag-moderate);
+  --cat-morphological: #4a6fa5;
+  --cat-visual: #7a5aa8;
+  --cat-homophone: #b0518a;
+  --cat-segmentation: var(--ok-green);
+  --cat-grammatical: var(--flag-weak);
+
   /* Motion. The built-in CSS easings are too weak to read as intentional, so
      these are the stronger variants everything below uses. `ease-in` is
      deliberately absent: it starts slow, which makes a control feel
@@ -732,13 +749,17 @@ h3 {
   white-space: nowrap;
 }
 
-.chip.c-phonological { color: var(--flag-strong); }
-.chip.c-orthographic { color: var(--flag-moderate); }
-.chip.c-morphological { color: #4a6fa5; }
-.chip.c-visual { color: #7a5aa8; }
-.chip.c-homophone { color: #b0518a; }
-.chip.c-segmentation { color: #2e7d5b; }
-.chip.c-grammatical { color: var(--flag-weak); }
+/* Category colours are declared once, on :root below, because the trend charts
+   have to paint the same category the same colour as these chips. A reader who
+   learns "amber means orthographic" in the report must not meet a different
+   amber on the dashboard. */
+.chip.c-phonological { color: var(--cat-phonological); }
+.chip.c-orthographic { color: var(--cat-orthographic); }
+.chip.c-morphological { color: var(--cat-morphological); }
+.chip.c-visual { color: var(--cat-visual); }
+.chip.c-homophone { color: var(--cat-homophone); }
+.chip.c-segmentation { color: var(--cat-segmentation); }
+.chip.c-grammatical { color: var(--cat-grammatical); }
 
 .chip-count {
   font-variant-numeric: tabular-nums;
@@ -1483,6 +1504,241 @@ a.dash-card:focus-visible {
   text-decoration: line-through;
   color: var(--ink-soft);
 }
+
+/* ── Error trend charts ─────────────────────────────────────────────────────
+   Shared by the per-student trend section and the caseload roll-up. The SVGs
+   carry no colour of their own: every hue is a --cat-* token, so the report's
+   chips and these charts can never drift apart. */
+
+.trend-panel {
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.6);
+  padding: 20px 22px;
+  margin-top: 22px;
+}
+
+.trend-panel > h2 {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 1.15rem;
+  margin-bottom: 4px;
+}
+
+/* The one sentence that says what changed. It is the finding; the charts are
+   the evidence for it, which is why it sits above them. */
+.trend-headline {
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--ink);
+  margin: 6px 0 4px;
+  max-width: 62ch;
+}
+
+.trend-caveat {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  max-width: 62ch;
+}
+
+.trend-charts {
+  display: grid;
+  gap: 26px;
+  margin-top: 20px;
+  /* Two up on a wide screen, stacked below. The band and the line answer
+     different questions, so neither is the "main" one. */
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.trend-chart-title {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.trend-chart-note {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  line-height: 1.45;
+  margin-bottom: 10px;
+}
+
+.chart {
+  margin: 0;
+}
+
+.chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.chart-grid {
+  stroke: var(--card-border);
+  stroke-width: 1;
+}
+
+/* Sample dividers sit on top of the bands, so they are kept very light — they
+   mark where a measurement was taken without competing with the data. */
+.chart-tick {
+  stroke: var(--paper);
+  stroke-width: 1;
+  opacity: 0.55;
+}
+
+.chart-band {
+  stroke: var(--paper);
+  stroke-width: 0.75;
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-dot {
+  fill: var(--paper);
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
+.chart-dot-last {
+  fill: var(--brand-red-deep);
+  stroke: var(--paper);
+  stroke-width: 2;
+}
+
+.chart-axis {
+  font-size: 11px;
+  fill: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-value {
+  font-size: 13px;
+  font-weight: 700;
+  fill: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-legend {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 12px;
+}
+
+.chart-legend li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.8rem;
+}
+
+.chart-swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.chart-legend-label {
+  color: var(--ink-soft);
+}
+
+.chart-legend-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.sparkline {
+  width: 88px;
+  height: 24px;
+  display: block;
+  overflow: visible;
+}
+
+/* ── Caseload roll-up table ─────────────────────────────────────────────── */
+
+.caseload-scroll {
+  overflow-x: auto;
+}
+
+.caseload-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  min-width: 520px;
+}
+
+.caseload-table th {
+  text-align: left;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+  font-weight: 700;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--card-border);
+}
+
+.caseload-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--card-border);
+  vertical-align: middle;
+}
+
+.caseload-table tr:last-child td {
+  border-bottom: none;
+}
+
+.caseload-num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.caseload-table th[scope="row"] {
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.88rem;
+  color: var(--ink);
+  border-bottom: 1px solid var(--card-border);
+}
+
+.caseload-direction {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Direction is encoded in the word as well as the colour, because the whole
+   point of this column is to be read at a glance and colour alone fails for
+   the readers this product exists for. */
+.trend-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 2px 9px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.trend-pill.t-down { color: var(--ok-green); }
+.trend-pill.t-up { color: var(--flag-strong); }
+.trend-pill.t-flat { color: var(--flag-weak); }
+.trend-pill.t-none { color: var(--flag-weak); opacity: 0.8; }
 
 .step-description {
   margin-top: 6px;
