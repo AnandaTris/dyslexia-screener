@@ -114,8 +114,13 @@ describe("Integrated Test 3 — Prediction Service", () => {
     // The failure is surfaced, not turned into a default verdict — an
     // "unlikely" produced by an error would be indistinguishable from a real one.
     expect(response.status).toBe(500);
-    expect(body.error).toBe("Gemini unavailable");
+    expect(body.error).toBe("Could not analyse the sample. Please try again.");
     expect(body.verdict).toBeUndefined();
+
+    // ...but surfaced as a status, not as the server's internals. An unhandled
+    // error here can name a Supabase host or arrive as an auth failure carrying
+    // the Gemini key, so the underlying message stays in the server log.
+    expect(JSON.stringify(body)).not.toMatch(/Gemini unavailable/);
 
     // Deviation (1) again, from the other side: because the sample is only
     // written after the model returns, a model failure loses the upload

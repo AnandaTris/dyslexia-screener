@@ -67,7 +67,12 @@ export async function POST(req) {
 
     return NextResponse.json({ text, analysis });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    // Kept server-side for the same reason as /api/analyze: an unhandled error
+    // here comes from the NLP stack or Supabase and can name paths and hosts.
+    console.error("Error-pattern analysis failed:", err);
+    return NextResponse.json(
+      { error: "Could not analyse the sample. Please try again." },
+      { status: 500 },
+    );
   }
 }

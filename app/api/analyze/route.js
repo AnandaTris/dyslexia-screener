@@ -280,7 +280,15 @@ export async function POST(req) {
 
     return NextResponse.json(screening);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    // The message stays on the server. Anything reaching here is unhandled, so
+    // it carries whatever the failing library chose to say — Supabase URLs, the
+    // Gemini key in a mis-tagged auth error, a filesystem path. The caller
+    // cannot act on any of it, and a screening failing is not a reason to hand
+    // out the server's internals.
+    console.error("Screening failed:", err);
+    return NextResponse.json(
+      { error: "Could not analyse the sample. Please try again." },
+      { status: 500 },
+    );
   }
 }
