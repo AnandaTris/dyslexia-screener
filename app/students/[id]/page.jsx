@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "../../../lib/supabase/server";
-import { loadStudent, ageFromBirthYear } from "../../../lib/students";
+import { loadStudent, ageFromBirthYear, isSchemaMissing } from "../../../lib/students";
 import { loadActiveJourney } from "../../../lib/journey";
+import { summariseStudentTrend, TREND_COLUMNS } from "../../../lib/trends";
+import ErrorTrend from "../../components/ErrorTrend";
 import JourneyBoard from "../../journey/JourneyBoard";
 import StudentLoginPanel from "../StudentLoginPanel";
 
@@ -41,6 +43,20 @@ export default async function StudentPage({ params }) {
     .eq("student_id", student.id)
     .order("created_at", { ascending: false })
     .limit(5);
+
+  // Ascending, because a trend is read oldest-first and sorting in the database
+  // saves the aggregator doing it again.
+  const { data: analyses, error: analysesError } = await supabase
+    .from("error_analyses")
+    .select(TREND_COLUMNS)
+    .eq("student_id", student.id)
+    .order("created_at", { ascending: true });
+
+  // Told apart from "no analyses yet" on purpose: this one means
+  // supabase/error_analyses_student.sql has not been run, and showing an empty
+  // trend for it sends someone hunting for a bug in the charts.
+  const trendsUnavailable = isSchemaMissing(analysesError);
+  const trend = summariseStudentTrend(analyses ?? []);
 
   const journey = await loadActiveJourney(supabase, user.id, student.id);
   const age = ageFromBirthYear(student.birth_year);
@@ -112,6 +128,22 @@ export default async function StudentPage({ params }) {
           />
         </section>
       </div>
+
+      {/* Above the journey deliberately: the trend is the evidence the journey
+          is supposed to respond to. */}
+      {trendsUnavailable ? (
+        <section className="trend-panel" aria-label="Error trends">
+          <h2>Error trends</h2>
+          <p className="trend-headline">Trends are not set up yet.</p>
+          <p className="trend-caveat">
+            Run <code>supabase/error_analyses_student.sql</code> in the Supabase
+            SQL editor. It adds the column that links an analysed sample to a
+            student, which is what these charts group by.
+          </p>
+        </section>
+      ) : (
+        <ErrorTrend trend={trend} studentName={student.display_name} />
+      )}
 
       <section className="assistant-panel" aria-label="Learning journey">
         <h2>Learning journey</h2>
