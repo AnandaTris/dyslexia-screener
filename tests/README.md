@@ -23,6 +23,8 @@ npm run test:integration  # plan cases 13-16, plus it5
 npm run test:watch
 npm run test:e2e          # the two live suites — needs a database and running services
 npm run test:all          # everything, e2e included
+npm run fuzz:smoke        # six fast-check targets, 500 generated cases each
+npm run fuzz:24h          # isolated robustness campaign, no services or API keys
 ```
 
 `npm test` deliberately **excludes** `e2e-*.test.js`. Those talk to the real Supabase
@@ -47,6 +49,11 @@ collaborators are faked, everything above them is the real code.
 
 Nothing reaches the network and no API key is needed, so both suites run in about a
 second.
+
+The separate fuzzer under `fuzz/` is intentionally outside this directory's one-test-per-plan-
+case rule. It exercises invariants over generated inputs and uses a dedicated Vitest config,
+so `npm test` remains deterministic and quick. See the root README for target selection,
+duration controls and exact seed/path replay.
 
 ## Unit test cases
 

@@ -18,7 +18,10 @@
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
     "test:e2e": "vitest run e2e-students.test.js e2e-student-access.test.js e2e-live.test.js",
-    "test:all": "vitest run"
+    "test:all": "vitest run",
+    "fuzz": "node scripts/run-fuzz.mjs",
+    "fuzz:smoke": "node scripts/run-fuzz.mjs --runs 500",
+    "fuzz:24h": "node scripts/run-fuzz.mjs --duration 24h"
   },
   "dependencies": {
     "@google/genai": "^1.9.0",
@@ -35,6 +38,7 @@
   },
   "devDependencies": {
     "concurrently": "^10.0.4",
+    "fast-check": "^4.9.0",
     "vitest": "^2.1.9"
   }
 }

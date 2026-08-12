@@ -340,14 +340,48 @@ tests/
   integration/                 real collaborators, only the boundary doubled
   support/                     shared doubles (Supabase, query builder, model, redirect)
 
+fuzz/
+  properties.fuzz.js           fast-check robustness properties (six pure targets)
+
 middleware.js                  session refresh + auth redirects
+scripts/run-fuzz.mjs           duration/run-count CLI and exact failure replay
 scripts/warm-nlp.mjs           model warm-up and smoke test
 scripts/venv-python.mjs        resolves the rag-service venv interpreter per OS
 vitest.config.mjs              test runner configuration
+vitest.fuzz.config.mjs         isolated single-worker configuration for long fuzz runs
 supabase/*.sql                 database schema (screenings, error_analyses, RAG, students)
 docs/NLP_ARCHITECTURE.md       full PS4 write-up
 docs/PROJECT_BRIEF.md          course handout + problem statements
 ```
+
+---
+
+## Fuzzing and robustness testing
+
+The robustness fuzzer uses `fast-check` against six pure seams where malformed or unusual
+input can silently corrupt a screening result: token offsets and statistics, character edit
+scripts, token edit scripts, the phoneme distance metric, the screening verdict rule, and
+stored trend aggregation. It never calls Gemini, Supabase, Ollama, or the network, so a long
+campaign cannot spend quota or alter student data.
+
+```bash
+npm run fuzz:smoke                       # 500 generated cases per target
+npm run fuzz                            # one-minute wall-clock campaign
+npm run fuzz -- --duration 10m          # custom wall-clock budget
+npm run fuzz:24h                         # rubric target: 24 hours total
+npm run fuzz -- --target token-alignment --runs 10000
+```
+
+A duration is a total budget and is divided evenly across the selected targets. Failing
+properties print a copy-paste replay command containing the target, seed and shrink path:
+
+```bash
+npm run fuzz -- --target character-alignment --seed 123 --path "0:1:2"
+```
+
+The fuzz suite has its own Vitest configuration and is not picked up by `npm test`. For a
+long unattended run, redirect output into the ignored `fuzz-results/` directory so the seed
+and counterexample survive a closed terminal.
 
 ---
 
@@ -455,7 +489,8 @@ Stated plainly because they matter for interpreting output:
 - Per-student chat, and attaching `error_analyses` to a student the way screenings now are
 - Material **download** — ingestion discards the source file after chunking, so there is
   nothing to serve back (see `tests/README.md`, note 5)
-- Frontend component tests (`PasswordField`, `ErrorAnalysis`) and a fuzzer (`fast-check`).
+- Frontend component tests (`PasswordField`, `ErrorAnalysis`). The `fast-check` robustness
+  fuzzer is implemented under `fuzz/` and can run as a bounded smoke test or a 24-hour campaign.
   A live end-to-end harness already exists — `e2e-live.test.js` drives the real
   `lib/ragService.js` against a running service and covers the grounded answer, the
   journey, and the bad-token / unreachable / timeout / missing-config paths (6 tests). It

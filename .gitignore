@@ -21,6 +21,7 @@ next-env.d.ts
 
 # --- Test / coverage ---
 /coverage
+/fuzz-results
 
 # --- Python (rag-service) ---
 .venv/
