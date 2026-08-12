@@ -8,7 +8,8 @@ statements:
   surface-level indicators associated with dyslexia (Gemini vision).
 - **PS4 — Error Pattern Analyzer.** Runs an NLP pipeline over the writing, categorises
   every spelling error as phonological / orthographic / morphological / visual, and
-  describes which error *pattern* the sample fits.
+  describes which error *pattern* the sample fits. Analyses file against a learner, so the
+  student page and the dashboard chart how that pattern moves across samples.
 - **PS3 — Adaptive learning, in part.** A grounded chat assistant and a step-by-step
   **learning journey**, both built from the learner's derived profile and drawn only from
   resources you have uploaded. Every answer and every step cites its source.
@@ -88,7 +89,7 @@ corpus ingested. A starter corpus ships in
 # macOS: brew install ollama && brew services start ollama
 # Windows, Linux: installer from https://ollama.com
 ollama pull nomic-embed-text
-ollama pull llama3.2:3b        # must match GENERATION_MODEL in rag-service/.env
+ollama pull llama3.2:3b        # must match GENERATION_MODEL in rag-service/.env — see below
 
 cd rag-service
 python -m venv .venv
@@ -101,6 +102,13 @@ python scripts/ingest_file.py corpus/surface-pattern.txt \
     --title "The surface pattern" --doc-type guide --profiles surface
 # ...and the phonological and visual-spatial files, tagged to match
 ```
+
+> **Set `GENERATION_MODEL` explicitly.** `rag-service/app/config.py` defaults to
+> `llama3.1:8b`. Pulling `llama3.2:3b` and leaving that line unset asks Ollama for weights
+> the machine does not have, and *every* answer fails — while the screener and analyser keep
+> working, so it reads as "the assistant is broken" rather than a config error. Whatever you
+> pull, write the same string into `rag-service/.env`. Sizing guidance and the
+> `ollama ps` check are in [`WORKFLOW.md`](WORKFLOW.md#5-the-learning-assistant-optional).
 
 Ingestion is **not idempotent** — running it twice duplicates the document and skews
 retrieval. Delete the `documents` row before re-ingesting a revised file.
@@ -116,6 +124,10 @@ journey. `/students/[id]` is that student's page.
 A student is identified by which URL you are on, not by a hidden "current student"
 selector. That is deliberate: filing a screening against the wrong child is the worst
 mistake this app can make, and a cookie-held selection goes stale in a second tab.
+
+The student page also carries that learner's **error trend** across every writing sample
+filed against them — one sentence of finding, then the two charts behind it. See
+[*Error trends across samples*](#error-trends-across-samples-ps4-dashboard).
 
 The year of birth is used only to prefill the writer's age on the screener, which drives
 the under-seven reversal guard described below.
@@ -146,6 +158,10 @@ assistant. The chat log is server-rendered from your stored messages, so it surv
 reload and matches the history the assistant is actually given. Every other page carries a
 Dashboard link back.
 
+It also carries the **caseload roll-up**: one row per student with a sparkline of their
+error density and a direction pill. Learners whose error density is rising sort to the
+top, because the point of a caseload view is to surface who to look at next.
+
 **`/journey` — the learning journey (PS3).** Builds an ordered set of steps from your
 derived profile and the uploaded resources, each step citing where it came from. Tick a
 step off and the progress bar moves on both this page and the dashboard card. Rebuilding
@@ -170,6 +186,50 @@ the handwriting, filename, or document itself.
   counts, or uncertain reconstructions.
 
 If a sample has fewer than four analysable errors, no profile is claimed at all.
+
+### Error trends across samples (PS4 dashboard)
+
+One analysis describes one sample. The PS4 deliverable asks what is happening *across*
+samples, which is a different question and needs its own arithmetic — that lives in
+`lib/trends.js`, as pure functions over stored rows, so the claims it makes are testable
+without a database.
+
+Two measurements, deliberately kept apart:
+
+- **Volume — errors per 100 words, never a raw count.** A 300-word sample with 15 errors is
+  cleaner writing than a 60-word sample with 10, and the raw counts say the opposite. Drawn
+  as a line chart.
+- **Mix — each category's *share* of that sample's errors.** PS4 asks which kind of error
+  dominates and whether that is shifting; a share answers it at any sample length. Drawn as
+  a stacked band.
+
+A falling error rate and a shifting mix are different findings, and merging them into one
+"score" would hide the useful half. Shares are taken against the *categorised* errors
+summed from `category_counts`, not against `error_count` — the two disagree, because
+`error_count` includes errors that carry no category, and a share against the larger number
+could never reach 100% even when one category accounts for everything.
+
+**Three samples are required before any direction is named.** Two points always make a
+line, and that line always slopes somewhere; calling a direction from it would manufacture
+a finding out of ordinary between-sample variation — the same mistake the analyser already
+refuses to make when it withholds a profile below four errors. Below three samples the
+charts still draw; only the claim is withheld. A share must also move more than 8 points,
+and the rate more than 1.5 per 100 words, before the movement is called anything but flat.
+
+The headline sentence describes **the writing, never the writer**, and avoids the language
+of improvement or deterioration: "error density fell from 12.4 to 8.1 per 100 words" is an
+observation about samples; "getting better" is a claim about a child that one page of text
+cannot support. The wording is built in `lib/trends.js` rather than in the component, so it
+can be tested.
+
+Charts are hand-rolled SVG — no charting dependency. The queries select only the lifted
+columns (`TREND_COLUMNS`), never the `result` blob that holds the full analysis, so drawing
+a dozen-point chart does not move megabytes.
+
+> Analyses recorded before `supabase/error_analyses_student.sql` was applied have no
+> `student_id` and are deliberately **not** backfilled — nothing in an old row identifies
+> which learner wrote it, and guessing would put one child's errors on another child's
+> trend line. Those rows simply do not appear in any trend.
 
 ---
 
@@ -287,10 +347,11 @@ the report.
 app/
   page.jsx                     PS1 screener: photo/PDF upload, verdict
   analysis/page.jsx            PS4 analyser: text input, error report
-  dashboard/page.jsx           post-login hub: screener, journey, profile, assistant
+  dashboard/page.jsx           post-login hub: screener, journey, profile, assistant,
+                               caseload error-trend roll-up
   dashboard/ChatAssistant.jsx  client chat UI with citations and offline state
   students/page.jsx            caseload list + add-student form
-  students/[id]/page.jsx       one student: profile, screenings, journey
+  students/[id]/page.jsx       one student: profile, screenings, journey, error trend
   students/actions.js          createStudent server action
   journey/page.jsx             redirects to /students
   journey/JourneyBoard.jsx     build, tick off steps, progress bar (per student)
@@ -300,6 +361,8 @@ app/
   components/
     PasswordField.jsx          password input with show/hide toggle
     ErrorAnalysis.jsx          renders the PS4 report
+    ErrorTrend.jsx             per-student trend: headline, charts, direction pill
+    TrendCharts.jsx            hand-rolled SVG: MixBand, RateLine, Sparkline
   api/
     analyze/route.js           PS1: photo/PDF → Gemini → screening → profile upsert
     analyze-text/route.js      PS4: text → error analysis
@@ -313,6 +376,8 @@ lib/
   ragService.js                server-only client for the Python service
   journey.js                   active-journey read + completion maths
   chat.js                      recent-message read + the two history limits
+  trends.js                    stored analyses → per-student and caseload trends
+  rateLimit.js                 in-process fixed-window limiter for the LLM endpoints
   screening/verdict.js         PS1 decision rule (score threshold + age guard)
   nlp/                         PS4 pipeline — see docs/NLP_ARCHITECTURE.md
     analyze, tokenize, gec, lexicon, g2p, phonemes,
@@ -349,7 +414,8 @@ scripts/warm-nlp.mjs           model warm-up and smoke test
 scripts/venv-python.mjs        resolves the rag-service venv interpreter per OS
 vitest.config.mjs              test runner configuration
 vitest.fuzz.config.mjs         isolated single-worker configuration for long fuzz runs
-supabase/*.sql                 database schema (screenings, error_analyses, RAG, students)
+supabase/*.sql                 database schema — six files, applied in a fixed order;
+                               the table is in WORKFLOW.md, "Database"
 docs/NLP_ARCHITECTURE.md       full PS4 write-up
 docs/PROJECT_BRIEF.md          course handout + problem statements
 ```
@@ -418,8 +484,26 @@ string-concatenated SQL anywhere. There is no `dangerouslySetInnerHTML`, `innerH
 `eval` in the codebase, so React's escaping is intact. The service token is compared with
 `hmac.compare_digest` (timing-safe) and fails closed when unset.
 
-**Uploads** are whitelisted by type and capped at 8 MB, and `/api/analyze-text` caps input
-at 20,000 characters.
+**Input is bounded at every entry point.** Uploads are whitelisted by type and capped at
+8 MB, `/api/analyze-text` caps a sample at 20,000 characters, and `/api/chat` caps a
+question at 2,000 — a question is not a writing sample, and the cap is what stops an
+unbounded string being forwarded to the model and stored.
+
+**The two expensive endpoints are rate-limited.** `lib/rateLimit.js` allows `/api/chat`
+10 calls per minute and `/api/journey` 5 per five minutes, keyed per user. Both hand work
+to a local CPU-bound model that occupies the machine for tens of seconds, so the budget
+that matters is how often an account may *start* one, not how many bytes it sends. The
+limiter is in-process and in-memory on purpose: what it protects is one machine's CPU, and
+the app runs as a single Next.js server beside a single uvicorn worker.
+
+**Security headers are set** in `next.config.mjs` for every path: a Content-Security-Policy,
+`X-Frame-Options: DENY` and `frame-ancestors` (the authenticated dashboard is no longer
+framable), `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`
+so a student id in a path never leaves in a `Referer`, and `Permissions-Policy` denying
+camera, microphone and geolocation. HSTS is added outside dev only.
+
+**Errors are not echoed back.** `/api/analyze` no longer returns `err.message` or raw model
+output to the client; unexpected throws are logged server-side and answered generically.
 
 ### Known gaps
 
@@ -428,30 +512,30 @@ Recorded honestly — these are real and currently unmitigated. The
 
 | Gap | Impact |
 |---|---|
-| **No rate limiting on any endpoint** | `/api/chat` and `/api/journey` each trigger a local CPU-bound LLM. Measured on this hardware with the starter corpus: chat **16–20 s** warm and **118 s** on the first call after Ollama starts; journey **72–122 s**. Any signed-in user can saturate the machine. `/api/analyze` spends paid Gemini quota per call. |
-| **`/api/chat` does not bound question length** | Its sibling `/api/analyze-text` caps at 20,000 chars; chat accepts any string, forwards it to the model and stores it. |
-| **No security headers** | `next.config.mjs` defines no `headers()`, so there is no CSP, `frame-ancestors`/X-Frame-Options, HSTS, `X-Content-Type-Options` or `Referrer-Policy`. The authenticated dashboard is framable. |
-| **Raw error text reaches the client** | `app/api/analyze/route.js` returns `err.message` from any unexpected throw, and the raw model output when JSON parsing fails. |
 | **Account enumeration on signup** | Signing up an existing address is answered with "that email is already registered". Deliberate — it saves the free-tier email quota — but it is an existence oracle. |
 | **Upload MIME type is client-supplied** | `/api/analyze` trusts `upload.type` with no magic-byte check. Impact is limited: the bytes are forwarded to Gemini, not parsed locally. |
+| **Rate limit counters are per-instance** | `lib/rateLimit.js` holds a `Map` in one process. Counters reset on restart (acceptable — a restart also clears the work the limit protects), but behind more than one instance the real limit is the per-instance one times the instance count. That is the point at which it needs shared state (Redis) rather than a Map. |
 
 ### Dependencies
 
-`npm audit` reports 11 vulnerabilities (1 critical, 7 high). Triaged:
+**Next has been upgraded to 15.5.x**, which closes the 21 advisories that previously
+mattered most here — DoS and SSRF in Server Actions, unauthenticated disclosure of internal
+Server Function endpoints, and cache-poisonable middleware redirects. This app uses Server
+Actions for auth and relies on middleware for its auth boundary, so those were reachable.
 
-- **Next.js 14.2.35 carries 21 open advisories**, several high and runtime-reachable — DoS
-  in App Router Server Actions, SSRF in Server Actions, unauthenticated disclosure of
-  internal Server Function endpoints, and cache-poisonable middleware redirects. This app
-  uses Server Actions for auth and relies on middleware for its auth boundary, so these
-  apply. **This is the one that matters.** The fix is Next ≥ 15.5.21, a major upgrade.
-- **`vitest` (critical) and `vite`/`esbuild`/`vite-node` are dev-only.** The critical
-  requires the Vitest **UI server** to be listening; this project never runs `vitest --ui`,
-  and none of it ships. Fixed by vitest 4.x, also a major.
-- **`sharp`/`libvips` (high) has no fix available.** It arrives via
-  `@huggingface/transformers` and is not on the user-upload path — screening images are
-  base64-encoded straight to Gemini and never handed to sharp.
-- **`postcss` (high)** is build-time only, via Next. **`adm-zip`/`onnxruntime-node`** are
-  reached only when loading model weights, not from user input.
+`npm audit` now reports 12 vulnerabilities (1 critical, 8 high, 3 moderate). Triaged:
+
+- **`vitest` (critical) and `@vitest/mocker`/`vite`/`esbuild`/`vite-node` are dev-only.**
+  The critical requires the Vitest **UI server** to be listening; this project never runs
+  `vitest --ui`, and none of it ships. Fixed by vitest 4.x, a major upgrade.
+- **`next` and `postcss` (high)** now want `next@16`, another major. Nothing in the
+  remaining Next advisories is in the class the 15.x upgrade closed; re-triage before
+  taking a second major.
+- **`sharp`/`libvips`, `adm-zip`, `onnxruntime-node`, `@huggingface/transformers` (high)
+  have no fix available.** They arrive under the local NLP model and are not on the
+  user-upload path — screening images are base64-encoded straight to Gemini and never
+  handed to sharp; the zip and runtime paths are reached only when loading model weights.
+- **`nanoid` (high) is fixable in place** — `npm audit fix`, no major required.
 
 Run `npm audit` before any deployment; do not treat the raw count as the risk.
 
@@ -483,13 +567,14 @@ Stated plainly because they matter for interpreting output:
 
 ## Still to do
 
-- Dashboard aggregating error trends across samples per learner (PS4 deliverable)
 - Deleting or archiving a student — there is deliberately no delete UI, because removing a
   student cascades away their screenings and journey
-- Per-student chat, and attaching `error_analyses` to a student the way screenings now are
+- Per-student chat. `error_analyses` now carries a `student_id`, so the analyser files
+  against a learner the way screenings do, but the chat panel is still therapist-level
 - Material **download** — ingestion discards the source file after chunking, so there is
   nothing to serve back (see `tests/README.md`, note 5)
-- Frontend component tests (`PasswordField`, `ErrorAnalysis`). The `fast-check` robustness
+- Frontend component tests (`PasswordField`, `ErrorAnalysis`, `ErrorTrend`, `TrendCharts` —
+  the trend arithmetic in `lib/trends.js` is covered, the SVG that draws it is not). The `fast-check` robustness
   fuzzer is implemented under `fuzz/` and can run as a bounded smoke test or a 24-hour campaign.
   A live end-to-end harness already exists — `e2e-live.test.js` drives the real
   `lib/ragService.js` against a running service and covers the grounded answer, the
@@ -497,7 +582,10 @@ Stated plainly because they matter for interpreting output:
   needs `E2E_SERVICE_TOKEN` set, or every authenticated call returns 401. What is still
   missing is *browser* E2E
 - PDF export of a report for referral to an assessor
-- **Security work, in priority order** (see *Security → Known gaps* and the
-  [pre-deploy checklist](WORKFLOW.md#pre-deploy-checklist)): upgrade Next past the 21 open
-  advisories, rate-limit the two LLM endpoints, cap the chat question length, add security
-  headers, and stop returning raw `err.message` to the client
+- **Security work.** The five items previously listed here — the Next upgrade, rate limiting
+  the two LLM endpoints, capping the chat question length, security headers, and raw
+  `err.message` reaching the client — have all landed. What remains is in
+  *Security → Known gaps*: magic-byte checking on uploads, the signup existence oracle
+  (deliberate), and the shared-state rewrite `lib/rateLimit.js` needs if this ever runs as
+  more than one instance. The
+  [pre-deploy checklist](WORKFLOW.md#pre-deploy-checklist) tracks them.
