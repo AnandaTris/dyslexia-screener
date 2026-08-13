@@ -447,7 +447,8 @@ npm run fuzz -- --target character-alignment --seed 123 --path "0:1:2"
 
 The fuzz suite has its own Vitest configuration and is not picked up by `npm test`. For a
 long unattended run, redirect output into the ignored `fuzz-results/` directory so the seed
-and counterexample survive a closed terminal.
+and counterexample survive a closed terminal. CI runs `npm run fuzz:smoke` on every push and
+pull request; the longer campaigns remain explicit release and presentation checks.
 
 ---
 
